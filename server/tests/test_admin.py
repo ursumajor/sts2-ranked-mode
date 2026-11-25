@@ -230,3 +230,20 @@ def test_window_with_runs_cannot_be_deleted(client):
 def test_admin_disabled_without_key(clock):
     c = make(clock, admin_key="")
     assert c.get("/admin").status_code == 503
+
+
+def test_env_file_loader(tmp_path, monkeypatch):
+    from ranked_server.config import load_env_file
+
+    p = tmp_path / ".env"
+    p.write_bytes("﻿RANKED_TEST_A=one\n# comment\nRANKED_TEST_B=\"two words\"\r\nRANKED_TEST_C=from-file\n".encode())
+    monkeypatch.delenv("RANKED_TEST_A", raising=False)
+    monkeypatch.delenv("RANKED_TEST_B", raising=False)
+    monkeypatch.setenv("RANKED_TEST_C", "from-env")
+    load_env_file(p)
+    import os
+    assert os.environ["RANKED_TEST_A"] == "one"  # BOM from Notepad/PowerShell doesn't break the first key
+    assert os.environ["RANKED_TEST_B"] == "two words"
+    assert os.environ["RANKED_TEST_C"] == "from-env"  # real env wins
+    for k in ("RANKED_TEST_A", "RANKED_TEST_B"):
+        monkeypatch.delenv(k)

@@ -69,10 +69,32 @@ active ranked run, results waiting to upload, and the ranked seeds you've played
 
 ## Running the server
 
+The server reads its settings from environment variables and from `server/.env`
+(copy `server/.env.example`). Relative `RANKED_DB_PATH` values are inside `server/`.
+
+### Windows (the live server)
+
+From the repo folder in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File server\windows\setup.ps1        # venv + packages + .env with a new admin key
+server\.venv\Scripts\python.exe -m ranked_server                       # test run; Ctrl+C to stop
+```
+
+Run it at boot as a scheduled task. It runs as SYSTEM, needs no login, restarts if it crashes, and logs
+to `server\server.log`. Use an **Administrator** PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File server\windows\install-task.ps1
+powershell -ExecutionPolicy Bypass -File server\windows\update.ps1       # later: git pull + restart
+```
+
+### Linux
+
 ```bash
-cd server
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-RANKED_ADMIN_KEY=change-me .venv/bin/uvicorn --factory ranked_server.app:create_app --host 0.0.0.0 --port 8000
+cd server && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env    # set RANKED_ADMIN_KEY
+.venv/bin/python -m ranked_server            # or run it as a systemd service
 ```
 
 | env var | default | meaning |

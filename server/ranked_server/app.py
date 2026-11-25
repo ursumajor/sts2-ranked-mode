@@ -1,6 +1,7 @@
 """STS2 Ranked Mode server.
 
-Run with:  uvicorn --factory ranked_server.app:create_app --host 0.0.0.0 --port 8000
+Run with:  python -m ranked_server            (reads server/.env; see --help)
+      or:  uvicorn --factory ranked_server.app:create_app --host 127.0.0.1 --port 8000
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import windows as win
 from .admin import mount_admin
-from .config import Settings
+from .config import Settings, load_env_file
 from .db import Database
 from .validation import RejectedRun, check_run
 
@@ -64,7 +65,9 @@ class WindowCreateRequest(BaseModel):
 
 
 def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.now) -> FastAPI:
-    settings = settings or Settings.from_env()
+    if settings is None:
+        load_env_file()
+        settings = Settings.from_env()
     db = Database(settings.db_path)
     win.fill_missing_characters(db, settings)
     win.seed_schedules_from_env(db, settings)
