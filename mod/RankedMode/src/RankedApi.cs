@@ -21,7 +21,15 @@ internal sealed class RankedApiException : Exception
 /// <summary>HTTP client for the ranked server (see server/README.md for the API).</summary>
 internal static class RankedApi
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly HttpClient Http = CreateClient();
+
+    private static HttpClient CreateClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        // Proxies/CDNs (e.g. Cloudflare's Browser Integrity Check) may reject requests without a User-Agent.
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"STS2RankedMode/{RankedMod.Version}");
+        return client;
+    }
 
     public static Task<JsonNode> Status() => Send(HttpMethod.Get, "/api/v1/status", null);
 
