@@ -370,12 +370,10 @@ def render_page(board: dict | None, recent: list[dict], now: int) -> str:
             result = "Victory" if r["victory"] else ("Abandoned" if r["abandoned"] else "Defeat")
             rows += (
                 f"<tr><td class=n>{r['rank']}</td><td>{e(r['player'])}</td><td>{result}</td>"
-                f"<td class=n>{r['floors']}</td><td class=n>{r['badges']}</td>"
-                f"<td class=n>{_fmt_duration(r['run_time'])}</td><td>{e(_pretty_id(r['character']))}</td>"
-                f"<td class=n>{r['ascension']}</td></tr>"
+                f"<td class=n>{r['floors']}</td><td class=n>{_fmt_duration(r['run_time'])}</td></tr>"
             )
         if not rows:
-            rows = "<tr><td colspan=8 class=empty>No finished runs yet.</td></tr>"
+            rows = "<tr><td colspan=5 class=empty>No finished runs yet.</td></tr>"
         w = board["window"]
         state = "open" if w["starts_at"] <= now < w["ends_at"] else ("closed" if now >= w["ends_at"] else "upcoming")
         seed = f" · seed <code>{e(w['seed'])}</code>" if "seed" in w else ""
@@ -398,8 +396,8 @@ th{{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu
 .empty{{text-align:center;color:var(--muted)}} a{{color:var(--accent)}} nav{{font-size:.85rem;line-height:1.9}} code{{font-size:.9em}}
 </style></head><body>
 {head}
-<table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th><th class=n>Badges</th>
-<th class=n>Time</th><th>Character</th><th class=n>Asc</th></tr></thead><tbody>{rows}</tbody></table>
+<table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th>
+<th class=n>Time</th></tr></thead><tbody>{rows}</tbody></table>
 <nav>Recent windows: {links}</nav>
 </body></html>"""
 
