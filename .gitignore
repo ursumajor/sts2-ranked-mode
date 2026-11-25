@@ -1,0 +1,15 @@
+# server
+server/.venv/
+__pycache__/
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
+# mod
+mod/RankedMode/bin/
+mod/RankedMode/obj/
+dist/
+mod/PatchCheck/bin/
+mod/PatchCheck/obj/
+mod/PatchCheck/out/
+server/.env

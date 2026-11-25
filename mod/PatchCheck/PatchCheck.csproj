@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><Nullable>enable</Nullable>
+  <Sts2Dir Condition="'$(Sts2Dir)' == ''">$(HOME)/.local/share/Steam/steamapps/common/Slay the Spire 2</Sts2Dir><Sts2Data>$(Sts2Dir)/data_sts2_linuxbsd_x86_64</Sts2Data></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="sts2"><HintPath>$(Sts2Data)/sts2.dll</HintPath></Reference>
+    <Reference Include="GodotSharp"><HintPath>$(Sts2Data)/GodotSharp.dll</HintPath></Reference>
+    <Reference Include="0Harmony"><HintPath>$(Sts2Data)/0Harmony.dll</HintPath></Reference>
+    <Reference Include="RankedMode"><HintPath>$(MSBuildThisFileDirectory)../RankedMode/bin/Release/net9.0/RankedMode.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

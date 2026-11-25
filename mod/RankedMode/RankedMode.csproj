@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>RankedMode</AssemblyName>
+    <RootNamespace>RankedMode</RootNamespace>
+    <Version>0.1.0</Version>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Override on the command line: dotnet build -p:Sts2Dir=/path/to/Slay\ the\ Spire\ 2 -->
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">$(HOME)/.local/share/Steam/steamapps/common/Slay the Spire 2</Sts2Dir>
+    <Sts2Data>$(Sts2Dir)/data_sts2_linuxbsd_x86_64</Sts2Data>
+    <Sts2Data Condition="!Exists('$(Sts2Data)')">$(Sts2Dir)/data_sts2_windows_x86_64</Sts2Data>
+    <ModInstallDir>$(Sts2Dir)/mods/RankedMode</ModInstallDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="sts2"><HintPath>$(Sts2Data)/sts2.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GodotSharp"><HintPath>$(Sts2Data)/GodotSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(Sts2Data)/0Harmony.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- dotnet build -t:Install copies the mod into the game's mods folder. -->
+  <Target Name="Install" DependsOnTargets="Build">
+    <MakeDir Directories="$(ModInstallDir)" />
+    <Copy SourceFiles="$(TargetPath);RankedMode.json" DestinationFolder="$(ModInstallDir)" />
+    <Message Importance="high" Text="Installed RankedMode to $(ModInstallDir)" />
+  </Target>
+
+</Project>

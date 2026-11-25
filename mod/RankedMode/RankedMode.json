@@ -1,0 +1,11 @@
+{
+  "id": "RankedMode",
+  "name": "Ranked Mode",
+  "author": "ursumajor",
+  "description": "Time-windowed ranked daily runs with a hidden seed, no save loading, and results sent to a ranked server.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": true,
+  "affects_gameplay": false,
+  "min_game_version": "0.113.1"
+}
