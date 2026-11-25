@@ -51,6 +51,25 @@ CREATE TABLE IF NOT EXISTS runs (
     UNIQUE (window_id, player_id)
 );
 CREATE INDEX IF NOT EXISTS runs_board ON runs (window_id, status, valid, score);
+
+-- Recurring window schedules, edited from the /admin page.
+CREATE TABLE IF NOT EXISTS schedules (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug                  TEXT NOT NULL UNIQUE,
+    start_time            TEXT NOT NULL,              -- "HH:MM" UTC
+    duration_minutes      INTEGER NOT NULL,
+    submit_grace_minutes  INTEGER NOT NULL,
+    weekdays              TEXT NOT NULL DEFAULT '0123456',  -- Monday = 0
+    characters            TEXT,                       -- comma-separated pool; NULL = all
+    game_version          TEXT,
+    enabled               INTEGER NOT NULL DEFAULT 1,
+    created_at            INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT
+);
 """
 
 
@@ -67,6 +86,8 @@ class Database:
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(windows)")}
         if "character" not in cols:  # databases created before windows had an assigned character
             self._conn.execute("ALTER TABLE windows ADD COLUMN character TEXT")
+        if "schedule_id" not in cols:  # databases created before recurring schedules lived in the DB
+            self._conn.execute("ALTER TABLE windows ADD COLUMN schedule_id INTEGER")
         self.lock = threading.RLock()
 
     def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:

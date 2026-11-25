@@ -78,8 +78,9 @@ RANKED_ADMIN_KEY=change-me .venv/bin/uvicorn --factory ranked_server.app:create_
 | env var | default | meaning |
 |---|---|---|
 | `RANKED_DB_PATH` | `ranked.db` | SQLite file |
-| `RANKED_ADMIN_KEY` | *(empty: admin API disabled)* | value for the `X-Admin-Key` header |
-| `RANKED_DAILY_START` | `18:00` | recurring daily window start, UTC `HH:MM`; empty disables recurring windows |
+| `RANKED_ADMIN_KEY` | *(empty: admin disabled)* | password for `/admin` and the `X-Admin-Key` header |
+| `RANKED_COOKIE_SECURE` | `1` | set `0` only for local http testing of `/admin` |
+| `RANKED_DAILY_START` | `18:00` | **first run only:** creates the initial `daily` schedule (UTC `HH:MM`); empty = none. Manage schedules at `/admin` afterwards |
 | `RANKED_DAILY_DURATION_MINUTES` | `240` | how long you can **start** a run |
 | `RANKED_SUBMIT_GRACE_MINUTES` | `180` | how long after close a started run may still be **submitted** |
 | `RANKED_GAME_VERSION` | *(empty)* | pin auto-created daily windows to a game version, e.g. `v0.113.1` |
@@ -91,6 +92,25 @@ Access, Bot Fight Mode and challenge rules off `/api/*`, because the mod can't s
 
 Leaderboard page: `GET /` (`?window_id=` for past windows). A window's seed is shown publicly once its
 submit deadline has passed.
+
+### Admin panel
+
+Open **https://spire.ursumajor.com/admin** and log in with `RANKED_ADMIN_KEY`. From there you can:
+
+- **Recurring schedules:** start time (UTC, with your local equivalent shown), how long it's open, submit
+  grace, weekdays, the character pool (one is drawn per window), an optional game-version pin, and on/off.
+  Saving a schedule regenerates its upcoming windows that have no runs yet. Windows that are open or already
+  have runs are never touched.
+- **Fixed windows:** start and end in your local time, character (or random), optional seed, version and id.
+- **Windows list:** open, upcoming and last-7-days windows with source, character, runs and a hidden seed
+  reveal. Windows without runs can be deleted.
+
+The first time the server starts on a database, `RANKED_DAILY_*` creates a schedule called `daily`. After
+that the database is the source of truth and those env vars are ignored.
+
+Security: the session is a signed, HttpOnly, Secure, SameSite=Strict cookie that lasts 12 hours, every form
+has a CSRF token, and failed logins are limited to 5 per IP per 15 minutes. For an extra layer you can put
+a Cloudflare Access policy on `/admin*` only. Don't put one on `/api/*`.
 
 ### API
 

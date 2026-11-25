@@ -26,7 +26,8 @@ class Settings:
     db_path: str
     # Required for /api/v1/admin/* routes. Admin routes are disabled when empty.
     admin_key: str
-    # Recurring daily window start, "HH:MM" in UTC. Empty string disables recurring windows.
+    # Recurring daily window start, "HH:MM" in UTC. Only used once, to create the first recurring schedule
+    # ("daily") in the DB. After that, schedules are edited at /admin. Empty string = no initial schedule.
     daily_start: str
     daily_duration_minutes: int
     # How long after a window closes a run that was started inside it may still be submitted.
@@ -35,6 +36,8 @@ class Settings:
     game_version: str
     # Characters a window can be assigned at random (STS2 model ids).
     characters: tuple[str, ...] = DEFAULT_CHARACTERS
+    # Mark the /admin session cookie Secure (HTTPS only). Turn off only for local http testing.
+    cookie_secure: bool = True
 
     @staticmethod
     def from_env() -> "Settings":
@@ -45,6 +48,7 @@ class Settings:
             daily_duration_minutes=_int_env("RANKED_DAILY_DURATION_MINUTES", 240),
             submit_grace_minutes=_int_env("RANKED_SUBMIT_GRACE_MINUTES", 180),
             game_version=os.environ.get("RANKED_GAME_VERSION", ""),
+            cookie_secure=os.environ.get("RANKED_COOKIE_SECURE", "1") not in ("0", "false", "no"),
             characters=tuple(
                 c.strip() for c in os.environ.get("RANKED_CHARACTERS", ",".join(DEFAULT_CHARACTERS)).split(",") if c.strip()
             ),

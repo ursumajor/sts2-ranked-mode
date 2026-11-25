@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from . import windows as win
+from .admin import mount_admin
 from .config import Settings
 from .db import Database
 from .validation import RejectedRun, check_run
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
     settings = settings or Settings.from_env()
     db = Database(settings.db_path)
     win.fill_missing_characters(db, settings)
+    win.seed_schedules_from_env(db, settings)
     app = FastAPI(title="STS2 Ranked Mode", version="0.1.0")
     app.state.settings = settings
     app.state.db = db
@@ -329,6 +331,8 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
         if row is None or row["run_json"] is None:
             raise HTTPException(404, "no run data")
         return json.loads(row["run_json"])
+
+    mount_admin(app, db, settings, t)
 
     # ---------- HTML leaderboard ----------
 
