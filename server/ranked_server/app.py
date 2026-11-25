@@ -7,19 +7,19 @@ Run with:  python -m ranked_server            (reads server/.env; see --help)
 from __future__ import annotations
 
 import hashlib
-import html
 import json
 import secrets
 import uuid
-from datetime import datetime, timezone
+from urllib.parse import quote
 from typing import Any, Callable
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from . import windows as win
 from .admin import mount_admin
+from .pages import render_home, render_not_found, render_window
 from .config import Settings, load_env_file
 from .db import Database
 from .validation import RejectedRun, check_run
@@ -340,71 +340,36 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
     # ---------- HTML leaderboard ----------
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, window_id: str | None = Query(default=None)):
+    def index(window_id: str | None = Query(default=None)):
+        if window_id:  # old links: /?window_id=X
+            return RedirectResponse(f"/windows/{quote(window_id, safe='')}", status_code=301)
+        now = t()
+        win.ensure_recurring_windows(db, settings, now)
+        rows = db.all(
+            "SELECT w.*,"
+            " (SELECT COUNT(*) FROM runs r WHERE r.window_id = w.id) AS players,"
+            " (SELECT COUNT(*) FROM runs r WHERE r.window_id = w.id AND r.status = 'finished' AND r.valid = 1) AS finished,"
+            " l.name AS leader_name, l.victory AS leader_victory, l.floors AS leader_floors"
+            " FROM windows w LEFT JOIN ("
+            "   SELECT r.window_id, p.name, r.victory, r.floors,"
+            "          ROW_NUMBER() OVER (PARTITION BY r.window_id ORDER BY r.score DESC, r.finished_at ASC) AS rn"
+            "   FROM runs r JOIN players p ON p.id = r.player_id WHERE r.status = 'finished' AND r.valid = 1"
+            " ) l ON l.window_id = w.id AND l.rn = 1"
+            " WHERE w.starts_at > ? OR w.ends_at > ? OR w.id IN ("
+            "   SELECT id FROM windows WHERE ends_at <= ? ORDER BY starts_at DESC LIMIT 30)"
+            " ORDER BY w.starts_at",
+            (now, now, now),
+        )
+        return render_home([dict(r) for r in rows], now)
+
+    @app.get("/windows/{window_id}", response_class=HTMLResponse)
+    def window_page(window_id: str):
         try:
             board = leaderboard(window_id)
         except HTTPException:
-            board = None
-        recent = list_windows(limit=14)
-        return render_page(board, recent, t())
+            return HTMLResponse(render_not_found(), 404)
+        return render_window(board, t())
 
     return app
 
-
-def _fmt_time(ts: int) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
-def _fmt_duration(seconds: int | None) -> str:
-    if seconds is None:
-        return "-"
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
-
-
-def _pretty_id(model_id: str | None) -> str:
-    if not model_id:
-        return "-"
-    return model_id.split(".", 1)[-1].replace("_", " ").title()
-
-
-def render_page(board: dict | None, recent: list[dict], now: int) -> str:
-    e = html.escape
-    rows = ""
-    if board:
-        for r in board["entries"]:
-            result = "Victory" if r["victory"] else ("Abandoned" if r["abandoned"] else "Defeat")
-            rows += (
-                f"<tr><td class=n>{r['rank']}</td><td>{e(r['player'])}</td><td>{result}</td>"
-                f"<td class=n>{r['floors']}</td><td class=n>{_fmt_duration(r['run_time'])}</td></tr>"
-            )
-        if not rows:
-            rows = "<tr><td colspan=5 class=empty>No finished runs yet.</td></tr>"
-        w = board["window"]
-        state = "open" if w["starts_at"] <= now < w["ends_at"] else ("closed" if now >= w["ends_at"] else "upcoming")
-        seed = f" · seed <code>{e(w['seed'])}</code>" if "seed" in w else ""
-        head = (
-            f"<h1>{e(w['id'])}</h1><p class=meta>{_fmt_time(w['starts_at'])} → {_fmt_time(w['ends_at'])}"
-            f" · <b>{state}</b>{seed} · {board['in_progress']} in progress</p>"
-        )
-    else:
-        head = "<h1>No ranked windows yet</h1>"
-    links = " ".join(f"<a href='/?window_id={e(w['id'])}'>{e(w['id'])}</a>" for w in recent)
-    return f"""<!doctype html><html><head><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>STS2 Ranked</title>
-<style>
-:root{{color-scheme:light dark;--fg:#1d1b18;--bg:#f7f4ee;--muted:#6b645a;--line:#ddd5c8;--accent:#9c3d1f}}
-@media(prefers-color-scheme:dark){{:root{{--fg:#ece6dc;--bg:#191714;--muted:#a39a8c;--line:#3a342c;--accent:#e0875e}}}}
-body{{font:15px/1.5 system-ui,sans-serif;color:var(--fg);background:var(--bg);max-width:860px;margin:2rem auto;padding:0 1rem}}
-h1{{margin:.2rem 0;font-size:1.6rem}} .meta{{color:var(--muted);margin-top:0}}
-table{{width:100%;border-collapse:collapse;margin:1rem 0}} th,td{{padding:.45rem .5rem;border-bottom:1px solid var(--line);text-align:left}}
-th{{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}} .n{{text-align:right;font-variant-numeric:tabular-nums}}
-.empty{{text-align:center;color:var(--muted)}} a{{color:var(--accent)}} nav{{font-size:.85rem;line-height:1.9}} code{{font-size:.9em}}
-</style></head><body>
-{head}
-<table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th>
-<th class=n>Time</th></tr></thead><tbody>{rows}</tbody></table>
-<nav>Recent windows: {links}</nav>
-</body></html>"""
 

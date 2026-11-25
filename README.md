@@ -112,7 +112,7 @@ In production, put it behind HTTPS, because player tokens travel in the `Authori
 server runs behind a Cloudflare tunnel (`spire.ursumajor.com` → `http://localhost:8000`). Keep Cloudflare
 Access, Bot Fight Mode and challenge rules off `/api/*`, because the mod can't solve challenges.
 
-Leaderboard page: `GET /` (`?window_id=` for past windows). A window's seed is shown publicly once its
+Home page `GET /` lists runs as open, upcoming or completed. Each run's leaderboard is at `GET /windows/<id>`. A window's seed is shown publicly once its
 submit deadline has passed.
 
 ### Admin panel

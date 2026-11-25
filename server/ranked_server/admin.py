@@ -402,7 +402,7 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             )
             win_rows += f"""
 <tr>
-  <td><a href="/?window_id={e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state}</span></td><td>{source}</td>
+  <td><a href="/windows/{e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state}</span></td><td>{source}</td>
   <td><time data-ts={w['starts_at']}></time></td><td><time data-ts={w['ends_at']}></time></td>
   <td>{e(_pretty_character(w['character']))}</td><td>{e(w['game_version'] or 'any')}</td>
   <td class=n>{w['finished']}/{w['runs']}</td>
