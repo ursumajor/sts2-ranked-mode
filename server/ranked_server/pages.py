@@ -80,8 +80,7 @@ def render_home(windows: list[dict], now: int) -> str:
         )
 
     body = f"""
-<header><h1>STS2 Ranked</h1><p class=muted>Dread runs on a hidden seed. Everyone plays the same character
-and seed, and gets one attempt per run. Times are shown in your local time.</p></header>
+<header><h1>STS2 Ranked</h1></header>
 {section("Open now", groups["open"], "No run is open right now.")}
 {section("Upcoming", groups["upcoming"], "Nothing scheduled yet.")}
 {section("Completed", groups["completed"], "No completed runs yet.")}
