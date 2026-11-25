@@ -7,13 +7,14 @@ using MegaCrit.Sts2.Core.Logging;
 namespace RankedMode;
 
 /// <summary>
-/// User-editable config at &lt;user data&gt;/ranked_mode/config.json
-/// (Linux: ~/.local/share/SlayTheSpire2/ranked_mode/config.json).
-/// The RANKED_SERVER_URL environment variable overrides the file.
+/// Optional config at &lt;user data&gt;/ranked_mode/config.json
+/// (Linux: ~/.local/share/SlayTheSpire2/ranked_mode/config.json), e.g. {"server_url": "http://127.0.0.1:8000"}.
+/// It is not created automatically, so players follow the built-in default when it changes.
+/// The RANKED_SERVER_URL environment variable overrides both.
 /// </summary>
 internal static class RankedConfig
 {
-    public const string DefaultServerUrl = "http://127.0.0.1:8000";
+    public const string DefaultServerUrl = "https://spire.ursumajor.com";
 
     public static string ServerUrl { get; private set; } = DefaultServerUrl;
 
@@ -25,16 +26,14 @@ internal static class RankedConfig
     {
         try
         {
-            Directory.CreateDirectory(Dir);
-            if (!File.Exists(FilePath))
+            if (File.Exists(FilePath))
             {
-                File.WriteAllText(FilePath, new JsonObject { ["server_url"] = DefaultServerUrl }.ToJsonString(new() { WriteIndented = true }));
-            }
-            var node = JsonNode.Parse(File.ReadAllText(FilePath));
-            var url = node?["server_url"]?.GetValue<string>();
-            if (!string.IsNullOrWhiteSpace(url))
-            {
-                ServerUrl = url.Trim().TrimEnd('/');
+                var node = JsonNode.Parse(File.ReadAllText(FilePath));
+                var url = node?["server_url"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    ServerUrl = url.Trim().TrimEnd('/');
+                }
             }
         }
         catch (Exception e)

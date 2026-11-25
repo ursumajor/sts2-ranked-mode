@@ -53,11 +53,12 @@ dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.jso
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it
 copies your saves into a separate modded profile**. That is base-game behaviour, not something this mod does.
 
-Point the mod at your server in `~/.local/share/SlayTheSpire2/ranked_mode/config.json` (created on first
-launch), or set the `RANKED_SERVER_URL` environment variable:
+The mod talks to **https://spire.ursumajor.com** by default. To use a different server (for example a
+local one during development), create `~/.local/share/SlayTheSpire2/ranked_mode/config.json`, or set the
+`RANKED_SERVER_URL` environment variable:
 
 ```json
-{ "server_url": "https://ranked.example.com" }
+{ "server_url": "http://127.0.0.1:8000" }
 ```
 
 The Ranked button is in **Singleplayer** next to Daily (it uses the Dread icon). The base game hides Singleplayer while a run save
@@ -84,7 +85,9 @@ RANKED_ADMIN_KEY=change-me .venv/bin/uvicorn --factory ranked_server.app:create_
 | `RANKED_GAME_VERSION` | *(empty)* | pin auto-created daily windows to a game version, e.g. `v0.113.1` |
 | `RANKED_CHARACTERS` | all six | comma-separated character ids a window is randomly assigned from, e.g. `CHARACTER.IRONCLAD,CHARACTER.SILENT` |
 
-In production, put it behind HTTPS (Caddy or nginx), because player tokens travel in the `Authorization` header.
+In production, put it behind HTTPS, because player tokens travel in the `Authorization` header. The live
+server runs behind a Cloudflare tunnel (`spire.ursumajor.com` → `http://localhost:8000`). Keep Cloudflare
+Access, Bot Fight Mode and challenge rules off `/api/*`, because the mod can't solve challenges.
 
 Leaderboard page: `GET /` (`?window_id=` for past windows). A window's seed is shown publicly once its
 submit deadline has passed.
