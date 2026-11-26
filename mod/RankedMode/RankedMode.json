@@ -2,7 +2,7 @@
   "id": "RankedMode",
   "name": "Ranked Mode",
   "author": "ursumajor",
-  "description": "Time-windowed ranked daily runs with a hidden seed, no save loading, and results sent to a ranked server.",
+  "description": "Time-windowed ranked Dread runs: same character and hidden seed for everyone, one attempt, no save loading. Results go to spire.ursumajor.com.",
   "version": "0.2.0",
   "has_pck": false,
   "has_dll": true,
