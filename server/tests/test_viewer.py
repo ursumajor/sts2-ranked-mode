@@ -98,3 +98,31 @@ def test_viewer_endpoints_respect_deadline_and_backfill():
     assert "steam" not in json.dumps(v).lower()
     page = c.get("/windows/daily-2026-11-25").text
     assert f"/runs/{rid}/view" in page
+
+
+def _details_by_floor(v):
+    return {n["floor"]: n["detail"] for a in v["acts"] for n in a["nodes"] if n.get("detail")}
+
+
+def test_deck_and_relics_going_into_each_floor():
+    v = build_viewer(FIXTURE["run"], None, FIXTURE["window_maps"], {})
+    by_floor = _details_by_floor(v)
+    assert sorted(by_floor) == list(range(31)) and not any(d.get("deck_approximate") for d in by_floor.values())
+    # Going into the first floor: the Regent starting deck (plus the Dread curse) and starter relic only.
+    start = by_floor[0]
+    assert sorted(start["deck_before"]) == sorted(["Strike Regent"] * 4 + ["Defend Regent"] * 4
+                                                 + ["Falling Star", "Venerate", "Ascenders Bane"])
+    assert start["relics_before"] == ["Divine Right"]
+    # Parrying Shield was picked on floor 11 (floor_added_to_deck 12): not held going into 11, held going into 12.
+    assert "Parrying Shield" not in by_floor[11]["relics_before"] and "Parrying Shield" in by_floor[12]["relics_before"]
+    # Deck sizes only change by what each floor logs, and the last floor leads to the final deck's size.
+    assert [len(by_floor[g]["deck_before"]) for g in (0, 1, 30)] == [11, 12, 31] and len(v["deck"]) == 31
+
+
+def test_unlogged_deck_change_marks_earlier_floors_approximate():
+    run = json.loads(json.dumps(FIXTURE["run"]))
+    # Floor 5 says a card was gained that isn't in the final deck and was never logged as removed.
+    run["map_point_history"][0][5]["player_stats"][0].setdefault("cards_gained", []).append({"id": "CARD.MYSTERY"})
+    by_floor = _details_by_floor(build_viewer(run, None, FIXTURE["window_maps"], {}))
+    assert all(by_floor[g].get("deck_approximate") for g in range(6))
+    assert not any(by_floor[g].get("deck_approximate") for g in range(6, 31))

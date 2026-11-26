@@ -49,6 +49,9 @@
   .tag.skipped { background: #88888822; color: #888; border-color: #88888844; }
   .tag.picked { background: #7ec8e322; color: #7ec8e3; border-color: #7ec8e344; }
   .tag.relic { background: #c9a84c22; color: #c9a84c; }
+  #sidebar h3 .count { color: #888; letter-spacing: 0; margin-left: 4px; }
+  .state-note { font-size: 0.75rem; color: #e0a85c; margin: -6px 0 6px; }
+  .state-note:empty { display: none; }
 
   #legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 20px; background: #16213e; border-top: 1px solid #c9a84c22; flex-shrink: 0; }
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #aaa; }
@@ -71,8 +74,8 @@
       <h3>Room Details</h3>
       <div class="sidebar-placeholder" id="sidebar-placeholder">Hover over a room to see details</div>
       <div id="sidebar-content"></div>
-      <h3 class="later">Relics</h3><div class="tag-list" id="relics"></div>
-      <h3 class="later">Final deck</h3><div class="tag-list" id="deck"></div>
+      <h3 class="later" id="relics-head">Relics</h3><div class="tag-list" id="relics"></div>
+      <h3 class="later" id="deck-head">Final deck</h3><div class="state-note" id="deck-note"></div><div class="tag-list" id="deck"></div>
     </div>
   </div>
   <div id="legend"></div>
@@ -147,10 +150,8 @@ function init() {
     tab.addEventListener('click', () => switchAct(i));
     tabs.insertBefore(tab, $('quality'));
   });
-  (data.relics || []).forEach(n => $('relics').appendChild(el('span', 'tag relic', n)));
-  const counts = {};
-  (data.deck || []).forEach(n => counts[n] = (counts[n] || 0) + 1);
-  Object.entries(counts).forEach(([n, c]) => $('deck').appendChild(el('span', 'tag picked', c > 1 ? `${n} ×${c}` : n)));
+  showFinalState();
+  $('map-area').addEventListener('mouseleave', showFinalState);
 
   const legend = $('legend');
   for (const t of ['monster', 'elite', 'boss', 'rest_site', 'unknown', 'shop', 'treasure', 'ancient']) {
@@ -188,7 +189,10 @@ function renderMap(act) {
       m.appendChild(el('div', null, 'Floors visited:'));
       act.floors.forEach(f => {
         const b = el('div', 'act-tab', `${f.floor}: ${room(f.point_type).label}`);
-        b.addEventListener('click', () => showDetail({ type: f.point_type, detail: f, floor: f.floor, visited: true }, act));
+        const n = { type: f.point_type, detail: f, floor: f.floor, visited: true };
+        b.addEventListener('mouseenter', () => { showDetail(n, act); showNodeState(n); });
+        b.addEventListener('mouseleave', showFinalState);
+        b.addEventListener('click', () => { showDetail(n, act); showNodeState(n); });
         m.appendChild(b);
       });
     }
@@ -227,8 +231,9 @@ function renderMap(act) {
       'font-family': 'Segoe UI, sans-serif', opacity: n.visited ? '1' : '0.6', 'pointer-events': 'none' });
     text.textContent = r.icon;
     g.appendChild(text);
-    g.addEventListener('mouseenter', () => showDetail(n, act));
-    g.addEventListener('click', () => showDetail(n, act));
+    g.addEventListener('mouseenter', () => { showDetail(n, act); showNodeState(n); });
+    g.addEventListener('mouseleave', showFinalState);
+    g.addEventListener('click', () => { showDetail(n, act); showNodeState(n); });
     svg.appendChild(g);
   });
 
@@ -242,6 +247,30 @@ function renderMap(act) {
     label.textContent = rowFloor[row];
     svg.appendChild(label);
   }
+}
+
+// ── Relics and deck: final by default, or going into the hovered node ──────
+function renderState(relicsHead, relics, deckHead, deck, note) {
+  const head = (h, title, n) => { h.textContent = title; h.appendChild(el('span', 'count', `(${n})`)); };
+  head($('relics-head'), relicsHead, relics.length);
+  head($('deck-head'), deckHead, deck.length);
+  $('deck-note').textContent = note || '';
+  $('relics').innerHTML = '';
+  relics.forEach(n => $('relics').appendChild(el('span', 'tag relic', n)));
+  const counts = {};
+  deck.forEach(n => counts[n] = (counts[n] || 0) + 1);
+  $('deck').innerHTML = '';
+  Object.entries(counts).forEach(([n, c]) => $('deck').appendChild(el('span', 'tag picked', c > 1 ? `${n} ×${c}` : n)));
+}
+function showFinalState() {
+  if (data) renderState('Final relics', data.relics || [], 'Final deck', data.deck || []);
+}
+function showNodeState(n) {
+  const d = n.detail;
+  if (!n.visited || !d || !d.deck_before) { showFinalState(); return; }
+  const into = `Going into floor ${n.floor}`;
+  renderState(`Relics · ${into}`, d.relics_before || [], `Deck · ${into}`, d.deck_before,
+    d.deck_approximate ? 'Approximate: a later deck change isn’t fully recorded in the run history.' : '');
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────

@@ -147,10 +147,116 @@ def floor_detail(entry: dict) -> dict:
     return d
 
 
+CardKey = tuple[str, int]  # (card id, upgrade level)
+
+
+def _card_key(c: Any) -> CardKey:
+    return (str(c.get("id")), int(c.get("current_upgrade_level") or 0)) if isinstance(c, dict) else ("", 0)
+
+
+def card_name(key: CardKey) -> str:
+    return pretty(key[0]) + "+" * key[1]
+
+
+def _stats(entry: dict) -> dict:
+    return (entry.get("player_stats") or [{}])[0]
+
+
+def deck_timeline(deck: list, history: list[dict]) -> tuple[list[list[str]], int]:
+    """The deck going into each floor, rebuilt by undoing each floor's changes backwards from the final deck.
+
+    Returns (decks, exact_from): decks[g] is the sorted card names before floor g's changes. If a floor's
+    changes don't match the deck (something the history doesn't log), floors before exact_from are approximate.
+    """
+    from collections import Counter
+
+    cur = Counter(_card_key(c) for c in deck if isinstance(c, dict))
+    out: list[list[str]] = [[] for _ in history]
+    exact_from = 0
+
+    def take(key: CardKey, any_upgrade: bool = False) -> bool:
+        if cur[key] > 0:
+            cur[key] -= 1
+            return True
+        if any_upgrade:  # e.g. gained, then upgraded on the same floor
+            for k in sorted(cur, key=lambda k: k[1]):
+                if k[0] == key[0] and cur[k] > 0:
+                    cur[k] -= 1
+                    return True
+        return False
+
+    for g in range(len(history) - 1, -1, -1):
+        st = _stats(history[g])
+        ok = True
+        for c in st.get("cards_removed") or []:  # undo the latest kind of change first
+            cur[_card_key(c)] += 1
+        for t in st.get("cards_transformed") or []:
+            ok &= take(_card_key(t.get("final_card") or {}), any_upgrade=True)
+            cur[_card_key(t.get("original_card") or {})] += 1
+        for cid in st.get("upgraded_cards") or []:
+            ups = [k for k in cur if k[0] == cid and k[1] > 0 and cur[k] > 0]
+            if ups:
+                k = max(ups, key=lambda k: k[1])
+                cur[k] -= 1
+                cur[(cid, k[1] - 1)] += 1
+            else:
+                ok = False
+        for c in st.get("cards_gained") or []:
+            ok &= take(_card_key(c), any_upgrade=True)
+        cur = +cur
+        if not ok and not exact_from:
+            exact_from = g + 1
+        out[g] = sorted(card_name(k) for k in cur.elements())
+    return out, exact_from
+
+
+def relic_timeline(relics: list, history: list[dict]) -> list[list[str]]:
+    """The relics held going into each floor, in the order they were gained.
+
+    floor_added_to_deck is 1-based (history index + 1). Starter relics also say floor 1, so a floor-1 relic counts
+    as gained at the first floor only if that floor's history says it was picked or bought.
+    """
+    def gained_at(g: int) -> set[str]:
+        st = _stats(history[g]) if 0 <= g < len(history) else {}
+        picked = {c.get("choice") for c in st.get("relic_choices") or [] if c.get("was_picked")}
+        return picked | set(st.get("bought_relics") or [])
+
+    held: list[tuple[int, int | None, str]] = []  # (gained at, removed at, id); gained at -1 = before the run
+    for r in relics:
+        if not isinstance(r, dict):
+            continue
+        g = int(r.get("floor_added_to_deck") or 1) - 1
+        if g == 0 and r.get("id") not in gained_at(0):
+            g = -1
+        held.append((g, None, str(r.get("id"))))
+    for j, entry in enumerate(history):
+        for rid in _stats(entry).get("relics_removed") or []:
+            g = next((k for k in range(j - 1, -1, -1) if rid in gained_at(k)), -1)
+            held.append((g, j, str(rid)))
+    held.sort(key=lambda h: h[0])
+    return [[pretty(rid) for (a, removed, rid) in held if a < g and (removed is None or removed >= g)]
+            for g in range(len(history))]
+
+
 def build_viewer(run: dict, map_log: dict | None, window_maps: dict | None, meta: dict) -> dict:
     """run: the stored SerializableRun JSON. map_log: {"acts": {"0": {"map": saved_map, "visited": [...]}}}.
     window_maps: {"0": {"act_id": ..., "map": saved_map}} from MapGen backfill. meta: header fields."""
     history = run.get("map_point_history") or []
+    player = (run.get("players") or [{}])[0]
+    flat = [e for act in history for e in act]
+    decks, deck_exact_from = deck_timeline(player.get("deck") or [], flat)
+    relics_before = relic_timeline(player.get("relics") or [], flat)
+
+    def detail(g: int, entry: dict) -> dict:
+        """A floor's details plus the deck and relics going into it."""
+        d = floor_detail(entry)
+        if g < len(flat):
+            d["deck_before"] = decks[g]
+            d["relics_before"] = relics_before[g]
+            if g < deck_exact_from:
+                d["deck_approximate"] = True
+        return d
+
     acts_out = []
     floor_base = 0
     current = int(run.get("current_act_index") or 0)
@@ -180,7 +286,7 @@ def build_viewer(run: dict, map_log: dict | None, window_maps: dict | None, meta
 
         if saved is None:
             out.update(quality="no_map", nodes=[], floors=[
-                {"floor": floor_base + k, "act_floor": k, **floor_detail(e)} for k, e in enumerate(entries)])
+                {"floor": floor_base + k, "act_floor": k, **detail(floor_base + k, e)} for k, e in enumerate(entries)])
             acts_out.append(out)
             floor_base += len(entries)
             continue
@@ -218,17 +324,16 @@ def build_viewer(run: dict, map_log: dict | None, window_maps: dict | None, meta
                 node["floor"] = floor_base + k
                 node["act_floor"] = k
                 if k < len(entries):
-                    node["detail"] = floor_detail(entries[k])
+                    node["detail"] = detail(floor_base + k, entries[k])
             nodes.append(node)
         out.update(quality=quality, width=m.width, rows=max(c[1] for c in m.points), nodes=nodes,
                    path=[_cid(c) for c in path])
         acts_out.append(out)
         floor_base += len(entries)
 
-    player = (run.get("players") or [{}])[0]
     return {
         "run": meta,
         "acts": acts_out,
-        "deck": sorted(pretty(c.get("id")) for c in player.get("deck") or [] if isinstance(c, dict)),
+        "deck": sorted(card_name(_card_key(c)) for c in player.get("deck") or [] if isinstance(c, dict)),
         "relics": [pretty(r.get("id")) for r in player.get("relics") or [] if isinstance(r, dict)],
     }
