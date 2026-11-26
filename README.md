@@ -47,11 +47,20 @@ You need the .NET 9 SDK. It was installed for this machine at `~/.dotnet`: `expo
 ```bash
 cd mod/RankedMode
 dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.json to <game>/mods/RankedMode/
-# or: ../package.sh  → dist/RankedMode-0.2.0.zip, which players unzip into <game>/mods/
+# or: ../package.sh  → dist/RankedMode-0.3.0.zip, which players unzip into <game>/mods/
 ```
 
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it
 copies your saves into a separate modded profile**. That is base-game behaviour, not something this mod does.
+
+**Everything is unlocked on the modded profile.** Each time the main menu loads, the mod runs the game's own
+`unlock all` (cards, relics, potions, monsters, events, acts, every timeline epoch, Ascension 10 for every
+character) and marks every encounter as seen. That way every ranked player generates the same run from the
+same seed and character. Without it, unlocks change the card pools, and unseen bosses get forced into your
+run. Before the first unlock, the profile's `progress.save` is copied to
+`~/.local/share/SlayTheSpire2/ranked_mode/backups/`. The game keeps modded saves separate
+(`.../modded/profileN`), so your unmodded progress is never touched. To undo it, quit the game and copy the
+backup over `modded/profileN/saves/progress.save`.
 
 The mod talks to **https://spire.ursumajor.com** by default. To use a different server (for example a
 local one during development), create `~/.local/share/SlayTheSpire2/ranked_mode/config.json`, or set the
@@ -210,9 +219,10 @@ All of this runs on the player's machine, so it raises the effort needed to chea
 - impersonation. Registration trusts the Steam ID the client sends, and the first registrant wins.
   Upgrading to Steam OpenID or Discord linking is the natural next step.
 
-**Fairness caveat:** the acts and card pools depend on each player's unlocks
-(`ActModel.GetRandomList(rng, unlockState)`). Players with different unlock progress can get somewhat
-different runs even on the same seed and character.
+**Fairness:** a run's acts, card pools and bosses depend on the player's unlocks and which encounters
+they've seen. The mod unlocks everything and marks every encounter seen (see above), so players line up.
+One difference remains: a profile with **zero** finished runs gets the game's first-run treatment. Run count
+is calculated from real wins and losses, so the mod doesn't fake it.
 
 **Dread side effects:** a ranked run is a real Dread run, so winning or losing it counts toward that
 character's Dread win streak in your profile.

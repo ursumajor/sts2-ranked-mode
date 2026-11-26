@@ -78,6 +78,11 @@ internal static class MainMenuPatches
 
     private static bool IsRanked(SerializableRun? run) => RankedState.IsRankedSeed(run?.SerializableRng?.Seed);
 
+    /// <summary>Unlock everything on the modded profile before the main menu builds its buttons.</summary>
+    [HarmonyPrefix]
+    [HarmonyPatch(nameof(NMainMenu._Ready))]
+    private static void BeforeMainMenuReady() => RankedUnlocker.EnsureUnlocked();
+
     [HarmonyPostfix]
     [HarmonyPatch(nameof(NMainMenu.RefreshButtons))]
     private static void AfterRefreshButtons(NMainMenu __instance)
