@@ -10,7 +10,7 @@ namespace RankedMode;
 public static class RankedMod
 {
     public const string Id = "RankedMode";
-    public const string Version = "0.4.2";
+    public const string Version = "0.4.1";
 
     public static string GameVersion => ReleaseInfoManager.Instance.ReleaseInfo?.Version ?? "unknown";
     public static string? GameCommit => ReleaseInfoManager.Instance.ReleaseInfo?.Commit;
