@@ -33,7 +33,6 @@
   #sidebar { width: 320px; background: #16213e; border-left: 1px solid #c9a84c22; overflow-y: auto; flex-shrink: 0; padding: 16px; }
   #sidebar h3 { color: #c9a84c; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px; }
   #sidebar h3.later { margin-top: 20px; }
-  .sidebar-placeholder { color: #555; font-size: 0.9rem; text-align: center; margin: 24px 0; }
   .detail-card { background: #1a1a2e; border: 1px solid #c9a84c33; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
   .detail-card .floor-label { font-size: 0.75rem; color: #888; margin-bottom: 6px; }
   .detail-card .room-name { font-size: 1rem; color: #e0d7c6; margin-bottom: 8px; }
@@ -71,11 +70,10 @@
   <div id="main">
     <div id="map-area"><svg id="map-svg"></svg></div>
     <div id="sidebar">
-      <h3>Room Details</h3>
-      <div class="sidebar-placeholder" id="sidebar-placeholder">Hover over a room to see details</div>
+      <h3 id="details-head">Run Details</h3>
       <div id="sidebar-content"></div>
       <h3 class="later" id="relics-head">Relics</h3><div class="tag-list" id="relics"></div>
-      <h3 class="later" id="deck-head">Final deck</h3><div class="state-note" id="deck-note"></div><div class="tag-list" id="deck"></div>
+      <h3 class="later" id="deck-head">Deck</h3><div class="state-note" id="deck-note"></div><div class="tag-list" id="deck"></div>
     </div>
   </div>
   <div id="legend"></div>
@@ -169,8 +167,7 @@ function init() {
 function switchAct(i) {
   currentAct = i;
   document.querySelectorAll('.act-tab').forEach((t, k) => t.classList.toggle('active', k === i));
-  $('sidebar-placeholder').style.display = '';
-  $('sidebar-content').innerHTML = '';
+  showFinalState();
   const a = data.acts[i];
   const [msg, warn] = QUALITY[a.quality] || ['', false];
   $('quality').textContent = msg; $('quality').className = warn ? 'warn' : '';
@@ -250,10 +247,10 @@ function renderMap(act) {
 }
 
 // ── Relics and deck: final by default, or going into the hovered node ──────
-function renderState(relicsHead, relics, deckHead, deck, note) {
+function renderState(relics, deck, note) {
   const head = (h, title, n) => { h.textContent = title; h.appendChild(el('span', 'count', `(${n})`)); };
-  head($('relics-head'), relicsHead, relics.length);
-  head($('deck-head'), deckHead, deck.length);
+  head($('relics-head'), 'Relics', relics.length);
+  head($('deck-head'), 'Deck', deck.length);
   $('deck-note').textContent = note || '';
   $('relics').innerHTML = '';
   relics.forEach(n => $('relics').appendChild(el('span', 'tag relic', n)));
@@ -262,14 +259,26 @@ function renderState(relicsHead, relics, deckHead, deck, note) {
   $('deck').innerHTML = '';
   Object.entries(counts).forEach(([n, c]) => $('deck').appendChild(el('span', 'tag picked', c > 1 ? `${n} ×${c}` : n)));
 }
+// Not hovering a room: run details, final relics and final deck.
 function showFinalState() {
-  if (data) renderState('Final relics', data.relics || [], 'Final deck', data.deck || []);
+  if (!data) return;
+  $('details-head').textContent = 'Run Details';
+  const content = $('sidebar-content'); content.innerHTML = '';
+  const r = data.run || {};
+  const card = el('div', 'detail-card');
+  addRow(card, 'Result', r.victory ? 'Victory' : (r.abandoned ? 'Abandoned' : 'Defeat'), r.victory ? 'positive' : 'negative');
+  addRow(card, 'Floors', r.floors);
+  addRow(card, 'Time', fmtTime(r.run_time));
+  if (r.ascension) addRow(card, 'Ascension', r.ascension);
+  addRow(card, 'Seed', r.seed);
+  content.appendChild(card);
+  renderState(data.relics || [], data.deck || []);
 }
+// Hovering a visited room: the relics and deck held going into it.
 function showNodeState(n) {
   const d = n.detail;
-  if (!n.visited || !d || !d.deck_before) { showFinalState(); return; }
-  const into = `Going into floor ${n.floor}`;
-  renderState(`Relics · ${into}`, d.relics_before || [], `Deck · ${into}`, d.deck_before,
+  if (!n.visited || !d || !d.deck_before) { renderState(data.relics || [], data.deck || []); return; }
+  renderState(d.relics_before || [], d.deck_before,
     d.deck_approximate ? 'Approximate: a later deck change isn’t fully recorded in the run history.' : '');
 }
 
@@ -295,7 +304,7 @@ function addTags(card, label, items, pickedKey) {
 }
 
 function showDetail(n, act) {
-  $('sidebar-placeholder').style.display = 'none';
+  $('details-head').textContent = 'Room Details';
   const content = $('sidebar-content'); content.innerHTML = '';
   const card = el('div', 'detail-card');
   const r = room(n.type);
