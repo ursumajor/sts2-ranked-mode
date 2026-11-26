@@ -47,7 +47,7 @@ You need the .NET 9 SDK. It was installed for this machine at `~/.dotnet`: `expo
 ```bash
 cd mod/RankedMode
 dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.json to <game>/mods/RankedMode/
-# or: ../package.sh  → dist/RankedMode-0.4.0.zip, which players unzip into <game>/mods/
+# or: ../package.sh  → dist/RankedMode-0.4.1.zip, which players unzip into <game>/mods/
 ```
 
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it

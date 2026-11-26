@@ -14,6 +14,25 @@ internal static class SingleplayerMenuPatches
 {
     private const string ButtonName = "RankedButton";
 
+    // Golden yellow on the submenu panel texture (Daily uses h 0.48, Dread 0.75, Custom 0.93).
+    private const float GoldHue = 0.955f;
+    private const float GoldSaturation = 2.4f;
+    private const float GoldBrightness = 0.8f;
+
+    /// <summary>
+    /// NSubmenuButton.OnEnable resets the panel's saturation to 1, which would wash the gold out to khaki.
+    /// Put it back for the Ranked card only.
+    /// </summary>
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(NSubmenuButton), "OnEnable")]
+    private static void KeepGoldSaturation(NSubmenuButton __instance)
+    {
+        if (__instance.Name == ButtonName && __instance.GetNodeOrNull<Control>("BgPanel")?.Material is ShaderMaterial m)
+        {
+            m.SetShaderParameter("s", GoldSaturation);
+        }
+    }
+
     [HarmonyPostfix]
     [HarmonyPatch(nameof(NSingleplayerSubmenu._Ready))]
     private static void AfterReady(NSingleplayerSubmenu __instance)
@@ -35,7 +54,14 @@ internal static class SingleplayerMenuPatches
             var bg = ranked.GetNodeOrNull<Control>("BgPanel");
             if (bg?.Material != null)
             {
-                bg.Material = (Material)bg.Material.Duplicate();
+                var material = (ShaderMaterial)bg.Material.Duplicate();
+                // Golden yellow. The panel uses hsv.gdshader: h rotates the hue (YIQ), s scales saturation,
+                // v scales brightness. Values were chosen by running the shader maths on submenu_panel.png.
+                // v is read as the card's resting brightness when it's added to the tree, so set it first.
+                material.SetShaderParameter("h", GoldHue);
+                material.SetShaderParameter("s", GoldSaturation);
+                material.SetShaderParameter("v", GoldBrightness);
+                bg.Material = material;
             }
             parent.AddChild(ranked);
             parent.MoveChild(ranked, daily.GetIndex() + 1);
