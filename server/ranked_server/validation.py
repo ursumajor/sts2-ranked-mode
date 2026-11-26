@@ -6,6 +6,8 @@ The game client is never fully trustworthy, so the server recomputes what it can
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
 
 
@@ -23,6 +25,8 @@ INVALIDATING_FLAGS = {
     "version_mismatch",
     "score_mismatch",
     "run_time_exceeds_wall_clock",
+    "run_file_invalid",
+    "run_file_mismatch",
 }
 
 START_TIME_TOLERANCE_BEFORE = 300  # run's start_time may be at most 5 min before /runs/start
@@ -136,3 +140,25 @@ def check_run(
         character=character,
         flags=flags,
     )
+
+
+def check_run_file(run_file: str | None, run: dict, window: dict) -> list[str]:
+    """The game's .run history file must describe the same run as the submitted save data.
+
+    Older mod versions don't send it, so a missing file isn't flagged.
+    """
+    if run_file is None:
+        return []
+    try:
+        history = json.loads(run_file)
+    except ValueError:
+        return ["run_file_invalid"]
+    if not isinstance(history, dict):
+        return ["run_file_invalid"]
+    if (
+        history.get("seed") != window["seed"]
+        or history.get("start_time") != run.get("start_time")
+        or history.get("game_mode") != "dread"
+    ):
+        return ["run_file_mismatch"]
+    return []

@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime, timezone
 
+from fastapi.responses import Response
+
 e = html.escape
+
+
+def run_file_response(content: str, window_id: str, player_name: str) -> Response:
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "-", f"{window_id}_{player_name}").strip("-") or "run"
+    return Response(
+        content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.run"', "Cache-Control": "no-store"},
+    )
 
 
 def _utc(ts: int) -> str:
@@ -92,13 +104,18 @@ def render_window(board: dict, now: int) -> str:
     w = board["window"]
     state = window_state(w, now)
     rows = ""
+    files_public = "seed" in w  # the .run file contains the seed, so it's only offered once that is public
     for r in board["entries"]:
+        file_cell = ""
+        if files_public:
+            file_cell = (f"<td><a href='/runs/{e(r['run_id'])}.run'>.run</a></td>" if r.get("has_run_file")
+                         else "<td class=muted>-</td>")
         rows += (
             f"<tr><td class=n>{r['rank']}</td><td>{e(r['player'])}</td><td>{_result(r)}</td>"
-            f"<td class=n>{r['floors']}</td><td class=n>{_duration(r['run_time'])}</td></tr>"
+            f"<td class=n>{r['floors']}</td><td class=n>{_duration(r['run_time'])}</td>{file_cell}</tr>"
         )
     if not rows:
-        rows = "<tr><td colspan=5 class=empty>No finished runs yet.</td></tr>"
+        rows = f"<tr><td colspan={6 if files_public else 5} class=empty>No finished runs yet.</td></tr>"
     if state == "open":
         when = f"open · closes in <span data-countdown={w['ends_at']}></span>"
     elif state == "upcoming":
@@ -112,7 +129,7 @@ def render_window(board: dict, now: int) -> str:
 <p class=muted>{e(_character(w.get('character')))} · {_time(w['starts_at'])} → {_time(w['ends_at'])}<br>
 {when} · {board['in_progress']} in progress{seed}</p>
 <table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th>
-<th class=n>Time</th></tr></thead><tbody>{rows}</tbody></table>
+<th class=n>Time</th>{"<th>Run file</th>" if files_public else ""}</tr></thead><tbody>{rows}</tbody></table>
 """
     return _page(f"{w['id']} · STS2 Ranked", body)
 

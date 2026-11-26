@@ -14,6 +14,16 @@ internal static class RankedSubmitter
 {
     private static bool _flushing;
 
+    // The game's .run history file for the ranked run, captured when the game saves it (see RunFileCapturePatch).
+    private static string? _runFileSeed;
+    private static string? _runFile;
+
+    public static void CaptureRunFile(string seed, string content)
+    {
+        _runFileSeed = seed;
+        _runFile = content;
+    }
+
     public static void Submit(SerializableRun run, bool victory, bool abandoned)
     {
         var active = RankedState.Active;
@@ -35,6 +45,16 @@ internal static class RankedSubmitter
                 ["mod_version"] = RankedMod.Version,
                 ["run"] = JsonNode.Parse(runJson),
             };
+            if (_runFile != null && _runFileSeed == active.Seed)
+            {
+                payload["run_file"] = _runFile;
+            }
+            else
+            {
+                Log.Warn("[RankedMode] No .run history file was captured for this ranked run; submitting without it.");
+            }
+            _runFile = null;
+            _runFileSeed = null;
             RankedState.EnqueueSubmission(active.RunId, payload.ToJsonString());
             Log.Info($"[RankedMode] Queued ranked result (victory={victory}, abandoned={abandoned}).");
         }

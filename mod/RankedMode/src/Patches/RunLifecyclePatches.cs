@@ -101,31 +101,65 @@ internal static class MainMenuPatches
         return false;
     }
 
+    /// <summary>
+    /// Abandoning from the main menu: the game writes the run history file inside AbandonRun, so remember the
+    /// save here and submit afterwards, once the .run file has been captured.
+    /// </summary>
     [HarmonyPrefix]
     [HarmonyPatch(nameof(NMainMenu.AbandonRun))]
-    private static void BeforeAbandon(NMainMenu __instance)
+    private static void BeforeAbandon(NMainMenu __instance, out SerializableRun? __state)
     {
+        __state = null;
         var run = SavedRun(__instance);
         if (!IsRanked(run))
         {
             return;
         }
+        __state = run;
         RankedSession.SuppressNextDailyUpload = true;
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(nameof(NMainMenu.AbandonRun))]
+    private static void AfterAbandon(SerializableRun? __state)
+    {
+        RankedSession.SuppressNextDailyUpload = false;
+        if (__state == null)
+        {
+            return;
+        }
         try
         {
-            RankedSubmitter.Submit(run!, victory: false, abandoned: true);
+            RankedSubmitter.Submit(__state, victory: false, abandoned: true);
         }
         catch (Exception e)
         {
             Log.Error($"[RankedMode] Failed to submit abandoned ranked run: {e}");
         }
     }
+}
 
-    [HarmonyPostfix]
-    [HarmonyPatch(nameof(NMainMenu.AbandonRun))]
-    private static void AfterAbandon()
+/// <summary>
+/// Capture the exact text of the game's .run history file for the active ranked run (the same
+/// JsonSerializationUtility.ToJson call the game uses to write history/&lt;start_time&gt;.run).
+/// Every run end path goes through here: death, victory, in-run abandon, main-menu abandon.
+/// </summary>
+[HarmonyPatch(typeof(SaveManager), nameof(SaveManager.SaveRunHistory))]
+internal static class RunFileCapturePatch
+{
+    private static void Postfix(RunHistory history)
     {
-        RankedSession.SuppressNextDailyUpload = false;
+        try
+        {
+            if (RankedState.IsActiveSeed(history?.Seed))
+            {
+                RankedSubmitter.CaptureRunFile(history!.Seed, JsonSerializationUtility.ToJson(history));
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[RankedMode] Could not capture the .run file: {e.Message}");
+        }
     }
 }
 

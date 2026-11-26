@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>RankedMode</AssemblyName>
     <RootNamespace>RankedMode</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <!-- Override on the command line: dotnet build -p:Sts2Dir=/path/to/Slay\ the\ Spire\ 2 -->

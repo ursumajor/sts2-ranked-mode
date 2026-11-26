@@ -19,10 +19,10 @@ from pydantic import BaseModel, Field
 
 from . import windows as win
 from .admin import mount_admin
-from .pages import render_home, render_not_found, render_window
+from .pages import render_home, render_not_found, render_window, run_file_response
 from .config import Settings, load_env_file
 from .db import Database
-from .validation import RejectedRun, check_run
+from .validation import RejectedRun, check_run, check_run_file
 
 API = "/api/v1"
 
@@ -49,6 +49,8 @@ class FinishRequest(BaseModel):
     game_commit: str | None = Field(default=None, max_length=64)
     mod_version: str = Field(max_length=32)
     run: dict[str, Any]
+    # The game's run history file (<start_time>.run) as written to disk. Optional for older mods.
+    run_file: str | None = Field(default=None, max_length=2_000_000)
 
 
 class WindowCreateRequest(BaseModel):
@@ -189,10 +191,11 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
                 )
             except RejectedRun as e:
                 raise HTTPException(422, str(e))
+            checked.flags.extend(check_run_file(body.run_file, body.run, window))
             db.execute(
                 "UPDATE runs SET status = 'finished', finished_at = ?, victory = ?, abandoned = ?, floors = ?,"
                 " badges = ?, run_time = ?, score = ?, ascension = ?, character = ?, valid = ?, flags = ?,"
-                " game_version = ?, mod_version = ?, run_json = ? WHERE id = ?",
+                " game_version = ?, mod_version = ?, run_json = ?, run_file = ? WHERE id = ?",
                 (
                     now,
                     int(checked.victory),
@@ -208,6 +211,7 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
                     body.game_version,
                     body.mod_version,
                     json.dumps(body.run, separators=(",", ":")),
+                    body.run_file,
                     run_id,
                 ),
             )
@@ -223,7 +227,8 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
 
     def leaderboard_rows(window_id: str) -> list[dict]:
         rows = db.all(
-            "SELECT r.*, p.name AS player_name FROM runs r JOIN players p ON p.id = r.player_id"
+            "SELECT r.*, r.run_file IS NOT NULL AS has_run_file, p.name AS player_name"
+            " FROM runs r JOIN players p ON p.id = r.player_id"
             " WHERE r.window_id = ? AND r.status = 'finished' AND r.valid = 1"
             " ORDER BY r.score DESC, r.finished_at ASC",
             (window_id,),
@@ -240,6 +245,8 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
                 "run_time": r["run_time"],
                 "character": r["character"],
                 "ascension": r["ascension"],
+                "run_id": r["id"],
+                "has_run_file": bool(r["has_run_file"]),
             }
             for i, r in enumerate(rows)
         ]
@@ -361,6 +368,18 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
             (now, now, now),
         )
         return render_home([dict(r) for r in rows], now)
+
+    @app.get("/runs/{run_id}.run")
+    def public_run_file(run_id: str):
+        """A run's .run file, public once its window's submit deadline has passed (it contains the seed)."""
+        row = db.one(
+            "SELECT r.run_file, r.valid, r.window_id, p.name, w.submit_deadline FROM runs r"
+            " JOIN players p ON p.id = r.player_id JOIN windows w ON w.id = r.window_id WHERE r.id = ?",
+            (run_id,),
+        )
+        if row is None or row["run_file"] is None or not row["valid"] or t() < row["submit_deadline"]:
+            raise HTTPException(404, "no run file")
+        return run_file_response(row["run_file"], row["window_id"], row["name"])
 
     @app.get("/windows/{window_id}", response_class=HTMLResponse)
     def window_page(window_id: str):

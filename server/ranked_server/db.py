@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS runs (
     game_version   TEXT,
     mod_version    TEXT,
     run_json       TEXT,
+    run_file       TEXT,      -- the game's own run history file (<start_time>.run), verbatim
     UNIQUE (window_id, player_id)
 );
 CREATE INDEX IF NOT EXISTS runs_board ON runs (window_id, status, valid, score);
@@ -86,6 +87,9 @@ class Database:
         cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(windows)")}
         if "character" not in cols:  # databases created before windows had an assigned character
             self._conn.execute("ALTER TABLE windows ADD COLUMN character TEXT")
+        run_cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(runs)")}
+        if "run_file" not in run_cols:  # databases created before .run files were uploaded
+            self._conn.execute("ALTER TABLE runs ADD COLUMN run_file TEXT")
         if "schedule_id" not in cols:  # databases created before recurring schedules lived in the DB
             self._conn.execute("ALTER TABLE windows ADD COLUMN schedule_id INTEGER")
         self.lock = threading.RLock()

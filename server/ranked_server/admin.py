@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import json
 import time
 import uuid
 from collections import defaultdict, deque
@@ -27,6 +28,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from . import windows as win
 from .config import DEFAULT_CHARACTERS, Settings
 from .db import Database
+from .pages import run_file_response
 
 COOKIE = "ranked_admin"
 SESSION_SECONDS = 12 * 3600
@@ -35,6 +37,7 @@ FAILURE_WINDOW_SECONDS = 15 * 60
 MAX_FORM_BYTES = 64 * 1024
 
 e = html.escape
+json_loads = json.loads
 
 
 def _pretty_character(model_id: str | None) -> str:
@@ -310,6 +313,58 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             note = " Its schedule will recreate it on the next status check unless you disable or edit the schedule."
         return redirect(msg=f"Window '{wid}' deleted.{note}")
 
+    @app.get("/admin/runs/{run_id}.run")
+    def admin_run_file(request: Request, run_id: str):
+        if not session_of(request):
+            return redirect(err="Please log in.")
+        row = db.one(
+            "SELECT r.run_file, r.window_id, p.name FROM runs r JOIN players p ON p.id = r.player_id WHERE r.id = ?",
+            (run_id,),
+        )
+        if row is None or row["run_file"] is None:
+            return redirect(err="That run has no .run file.")
+        return harden(run_file_response(row["run_file"], row["window_id"], row["name"]))
+
+    @app.get("/admin/windows/{wid}", response_class=HTMLResponse)
+    def admin_window_runs(request: Request, wid: str):
+        session = session_of(request)
+        if not session:
+            return redirect(err="Please log in.")
+        w = db.one("SELECT * FROM windows WHERE id = ?", (wid,))
+        if w is None:
+            return redirect(err="That window no longer exists.")
+        runs = db.all(
+            "SELECT r.*, r.run_file IS NOT NULL AS has_file, p.name, p.steam_id FROM runs r"
+            " JOIN players p ON p.id = r.player_id WHERE r.window_id = ?"
+            " ORDER BY r.status = 'finished' DESC, r.valid DESC, r.score DESC, r.started_at",
+            (wid,),
+        )
+        rows = ""
+        for r in runs:
+            if r["status"] != "finished":
+                result = "<span class=muted>in progress</span>"
+            else:
+                result = "Victory" if r["victory"] else ("Abandoned" if r["abandoned"] else "Defeat")
+            flags = ", ".join(json_loads(r["flags"])) if r["flags"] else ""
+            valid = "" if r["status"] != "finished" else ("<span class='tag open'>valid</span>" if r["valid"]
+                                                          else f"<span class=err>flagged</span> <small>{e(flags)}</small>")
+            dl = f"<a href='/admin/runs/{e(r['id'])}.run'>.run</a>" if r["has_file"] else "<span class=muted>-</span>"
+            raw = f"<small><code>{e(r['id'][:8])}</code></small>"
+            rows += (
+                f"<tr><td>{e(r['name'])}<br><small class=muted>{e(r['steam_id'])}</small></td><td>{result}</td>"
+                f"<td class=n>{r['floors'] if r['floors'] is not None else '-'}</td><td><time data-ts={r['started_at']}></time></td>"
+                f"<td>{valid}</td><td>{e(r['mod_version'] or '')}</td><td>{dl}</td><td>{raw}</td></tr>"
+            )
+        if not rows:
+            rows = "<tr><td colspan=8 class=empty>No runs yet.</td></tr>"
+        body = f"""
+<header><h1>{e(wid)}</h1><nav><a href="/admin">← Admin</a><a href="/windows/{e(wid)}">Public page</a></nav></header>
+<p class=muted>{e(_pretty_character(w['character']))} · <time data-ts={w['starts_at']}></time> → <time data-ts={w['ends_at']}></time>
+ · seed <code>{e(w['seed'])}</code></p>
+<table><thead><tr><th>Player</th><th>Result</th><th class=n>Floors</th><th>Started</th><th>Check</th><th>Mod</th>
+<th>File</th><th>Run id</th></tr></thead><tbody>{rows}</tbody></table>"""
+        return harden(HTMLResponse(page(f"{wid} · Ranked admin", body)))
+
     # ---------- rendering ----------
 
     def login_page(err: str) -> str:
@@ -402,7 +457,7 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             )
             win_rows += f"""
 <tr>
-  <td><a href="/windows/{e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state}</span></td><td>{source}</td>
+  <td><a href="/admin/windows/{e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state}</span></td><td>{source}</td>
   <td><time data-ts={w['starts_at']}></time></td><td><time data-ts={w['ends_at']}></time></td>
   <td>{e(_pretty_character(w['character']))}</td><td>{e(w['game_version'] or 'any')}</td>
   <td class=n>{w['finished']}/{w['runs']}</td>

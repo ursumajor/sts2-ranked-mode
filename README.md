@@ -47,7 +47,7 @@ You need the .NET 9 SDK. It was installed for this machine at `~/.dotnet`: `expo
 ```bash
 cd mod/RankedMode
 dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.json to <game>/mods/RankedMode/
-# or: ../package.sh  → dist/RankedMode-0.1.0.zip, which players unzip into <game>/mods/
+# or: ../package.sh  → dist/RankedMode-0.2.0.zip, which players unzip into <game>/mods/
 ```
 
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it
@@ -157,6 +157,19 @@ curl -X POST localhost:8000/api/v1/admin/windows -H 'X-Admin-Key: change-me' -H 
 
 Tests: `.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pytest`
 
+## Run files
+
+When a ranked run ends, the mod also sends the game's own **run history file**, the
+`history/<start_time>.run` that the in-game Run History screen reads. It's captured verbatim at the moment
+the game writes it, on every way a run can end: death, victory, abandoning in-run, or abandoning from the
+main menu. The server checks that it matches the submitted run (same seed, start time and Dread mode) and
+stores it.
+
+- **Admins:** `/admin` → click a window → each run has a `.run` download, available any time.
+- **Public:** a run's page gets a "Run file" column once its submit deadline passes. Before then the file
+  would reveal the seed.
+- Files from mods older than 0.2.0 aren't sent, and that isn't flagged.
+
 ## Scoring and server-side checks
 
 Score is the game's own daily score (`ScoreUtility.CalculateDailyScore`). In order of priority it counts
@@ -175,6 +188,7 @@ review it:
 | `late` | submitted after the window's submit deadline |
 | `version_mismatch` | game version differs from the window's pinned version |
 | `score_mismatch` | client score disagrees with the recomputed victory, floors or time |
+| `run_file_mismatch` / `run_file_invalid` | the uploaded `.run` file doesn't describe this run, or isn't valid JSON |
 | `custom_game`, `debug_command` | self-explanatory |
 
 ## Anti-cheat: what this does and doesn't stop
