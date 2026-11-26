@@ -64,3 +64,17 @@ def test_old_links_redirect_and_404():
     r = c.get("/?window_id=daily-2026-11-25")
     assert r.status_code == 301 and r.headers["location"] == "/windows/daily-2026-11-25"
     assert c.get("/windows/nope").status_code == 404
+
+
+def test_window_in_grace_period_is_not_completed():
+    # 22:00 close + 180 min grace: at 23:00 no new runs can start, but results aren't final until 01:00.
+    clock = Clock(int(datetime(2026, 11, 25, 23, 0, tzinfo=timezone.utc).timestamp()))
+    c = client(clock)
+    home = c.get("/").text
+    assert "daily-2026-11-25" in section(home, "Open now")
+    assert "daily-2026-11-25" not in section(home, "Completed")
+    page = c.get("/windows/daily-2026-11-25").text
+    assert "tag grace" in page and "grace period" in page and "tag completed" not in page
+    clock.t = int(datetime(2026, 11, 26, 1, 0, tzinfo=timezone.utc).timestamp())  # deadline passed
+    assert "daily-2026-11-25" in section(c.get("/").text, "Completed")
+    assert "tag completed" in c.get("/windows/daily-2026-11-25").text

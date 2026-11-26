@@ -46,9 +46,20 @@ def _time(ts: int) -> str:
 
 
 def window_state(w: dict, now: int) -> str:
-    if w["starts_at"] <= now < w["ends_at"]:
+    """open → grace (no new runs, started runs can still be submitted) → completed."""
+    if now < w["starts_at"]:
+        return "upcoming"
+    if now < w["ends_at"]:
         return "open"
-    return "upcoming" if now < w["starts_at"] else "completed"
+    return "grace" if now < w["submit_deadline"] else "completed"
+
+
+def _tag(state: str) -> str:
+    return f"<span class='tag {state}'>{'grace period' if state == 'grace' else state}</span>"
+
+
+def _results_final_in(w: dict) -> str:
+    return f"no new runs · results final in <span data-countdown={w['submit_deadline']}></span>"
 
 
 def _result(r: dict) -> str:
@@ -57,7 +68,7 @@ def _result(r: dict) -> str:
 
 def render_home(windows: list[dict], now: int) -> str:
     """windows: dicts with window columns plus players, finished, leader_name, leader_victory, leader_floors."""
-    groups = {"open": [], "upcoming": [], "completed": []}
+    groups = {"open": [], "grace": [], "upcoming": [], "completed": []}
     for w in windows:
         groups[window_state(w, now)].append(w)
     groups["upcoming"].sort(key=lambda w: w["starts_at"])
@@ -67,12 +78,12 @@ def render_home(windows: list[dict], now: int) -> str:
         state = window_state(w, now)
         if state == "open":
             when = f"closes in <span data-countdown={w['ends_at']}></span>"
+        elif state == "grace":
+            when = _results_final_in(w)
         elif state == "upcoming":
             when = f"{_time(w['starts_at'])} · opens in <span data-countdown={w['starts_at']}></span>"
         else:
             when = _time(w["starts_at"])
-            if now < w["submit_deadline"]:
-                when += " · <span class=muted>results not final yet</span>"
         if w["leader_name"]:
             how = "Victory" if w["leader_victory"] else "floor " + str(w["leader_floors"])
             leader = f"{e(w['leader_name'])} <span class=muted>· {how}</span>"
@@ -82,7 +93,7 @@ def render_home(windows: list[dict], now: int) -> str:
             f" <span class=muted>(+{w['players'] - w['finished']} playing)</span>" if w["players"] > w["finished"] else ""
         )
         return (
-            f"<tr><td><span class='tag {state}'>{state}</span></td>"
+            f"<tr><td>{_tag(state)}</td>"
             f"<td><a href='/windows/{e(w['id'])}'>{e(w['id'])}</a></td>"
             f"<td>{e(_character(w['character']))}</td><td>{when}</td>"
             f"<td class=n>{players}</td><td>{leader}</td></tr>"
@@ -97,7 +108,7 @@ def render_home(windows: list[dict], now: int) -> str:
 
     body = f"""
 <header><h1>STS2 Ranked</h1></header>
-{section("Open now", groups["open"], "No run is open right now.")}
+{section("Open now", groups["open"] + groups["grace"], "No run is open right now.")}
 {section("Upcoming", groups["upcoming"], "Nothing scheduled yet.")}
 {section("Completed", groups["completed"], "No completed runs yet.")}
 """
@@ -125,12 +136,14 @@ def render_window(board: dict, now: int) -> str:
         when = f"open · closes in <span data-countdown={w['ends_at']}></span>"
     elif state == "upcoming":
         when = f"opens in <span data-countdown={w['starts_at']}></span>"
+    elif state == "grace":
+        when = "grace period · " + _results_final_in(w)
     else:
         when = "completed"
     seed = f" · seed <code>{e(w['seed'])}</code>" if "seed" in w else ""
     body = f"""
 <p><a href="/">← All runs</a></p>
-<h1>{e(w['id'])} <span class='tag {state}'>{state}</span></h1>
+<h1>{e(w['id'])} {_tag(state)}</h1>
 <p class=muted>{e(_character(w.get('character')))} · {_time(w['starts_at'])} → {_time(w['ends_at'])}<br>
 {when} · {board['in_progress']} in progress{seed}</p>
 <table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th>
@@ -159,6 +172,7 @@ th{font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu
 .empty{text-align:center;color:var(--muted)} .muted{color:var(--muted)} a{color:var(--accent)} code{font-size:.9em}
 .tag{font-size:.75rem;border:1px solid var(--line);border-radius:999px;padding:0 .5rem;white-space:nowrap;vertical-align:middle;font-weight:normal}
 .tag.open{color:var(--ok);border-color:var(--ok)} .tag.upcoming{color:var(--accent);border-color:var(--accent)} .tag.completed{color:var(--muted)}
+.tag.grace{color:var(--ok);border-color:var(--ok);border-style:dashed}
 """
 
 JS = """

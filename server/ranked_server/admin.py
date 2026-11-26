@@ -463,7 +463,9 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
         )
         win_rows = ""
         for w in rows:
-            state = "open" if w["starts_at"] <= now < w["ends_at"] else ("upcoming" if now < w["starts_at"] else "closed")
+            state = ("upcoming" if now < w["starts_at"] else "open" if now < w["ends_at"]
+                     else "grace" if now < w["submit_deadline"] else "closed")
+            state_label = "grace period" if state == "grace" else state
             source = f"recurring · {e(w['schedule_slug'])}" if w["kind"] == win.KIND_RECURRING and w["schedule_slug"] else (
                 "recurring" if w["kind"] == win.KIND_RECURRING else "fixed")
             delete = (
@@ -473,7 +475,7 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             )
             win_rows += f"""
 <tr>
-  <td><a href="/admin/windows/{e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state}</span></td><td>{source}</td>
+  <td><a href="/admin/windows/{e(w['id'])}">{e(w['id'])}</a></td><td><span class="tag {state}">{state_label}</span></td><td>{source}</td>
   <td><time data-ts={w['starts_at']}></time></td><td><time data-ts={w['ends_at']}></time></td>
   <td>{e(_pretty_character(w['character']))}</td><td>{e(w['game_version'] or 'any')}</td>
   <td class=n>{w['finished']}/{w['runs']}</td>
@@ -556,6 +558,7 @@ button.link{background:none;color:var(--accent);padding:0;text-decoration:underl
 details summary{cursor:pointer;color:var(--accent)} details.add{margin-top:.6rem}
 .tag{font-size:.75rem;border:1px solid var(--line);border-radius:999px;padding:0 .45rem}
 .tag.open{color:var(--ok);border-color:var(--ok)} .tag.upcoming{color:var(--accent);border-color:var(--accent)}
+.tag.grace{color:var(--ok);border-color:var(--ok);border-style:dashed}
 .ok{color:var(--ok)} .err{color:var(--err)}
 """
 
