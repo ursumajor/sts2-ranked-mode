@@ -19,6 +19,47 @@ internal static class SingleplayerMenuPatches
     private const float GoldSaturation = 2.4f;
     private const float GoldBrightness = 0.8f;
 
+    /// <summary>File name of the optional custom card picture, next to RankedMode.dll in the mods folder.</summary>
+    public const string IconFile = "ranked_icon.png";
+
+    private static Texture2D? _customIcon;
+
+    /// <summary>
+    /// Loads mods/RankedMode/ranked_icon.png if present. The game's card pictures are 378x288 and sit inside a
+    /// decorative frame, so an image of that size (or the same 21:16 shape) fits best. Returns null to keep the
+    /// built-in Dread icon.
+    /// </summary>
+    private static Texture2D? LoadCustomIcon()
+    {
+        if (_customIcon != null)
+        {
+            return _customIcon;
+        }
+        try
+        {
+            string dir = System.IO.Path.GetDirectoryName(typeof(RankedMod).Assembly.Location) ?? "";
+            string path = System.IO.Path.Combine(dir, IconFile);
+            if (!System.IO.File.Exists(path))
+            {
+                return null;
+            }
+            var image = Image.LoadFromFile(path);
+            if (image == null || image.IsEmpty())
+            {
+                Log.Warn($"[RankedMode] Could not read {path}; using the default icon.");
+                return null;
+            }
+            _customIcon = ImageTexture.CreateFromImage(image);
+            Log.Info($"[RankedMode] Using custom Ranked icon {path} ({image.GetWidth()}x{image.GetHeight()}).");
+            return _customIcon;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[RankedMode] Custom Ranked icon failed to load: {e.Message}");
+            return null;
+        }
+    }
+
     /// <summary>
     /// NSubmenuButton.OnEnable resets the panel's saturation to 1, which would wash the gold out to khaki.
     /// Put it back for the Ranked card only.
@@ -69,6 +110,10 @@ internal static class SingleplayerMenuPatches
             RankedLoc.Inject();
             ranked.SetLocalization("RANKED");
             ranked.SetIcon("dread");
+            if (LoadCustomIcon() is { } icon)
+            {
+                ranked.GetNodeOrNull<TextureRect>("%SubmenuPortrait")?.SetTexture(icon);
+            }
         }
         catch (Exception e)
         {

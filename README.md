@@ -47,7 +47,7 @@ You need the .NET 9 SDK. It was installed for this machine at `~/.dotnet`: `expo
 ```bash
 cd mod/RankedMode
 dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.json to <game>/mods/RankedMode/
-# or: ../package.sh  → dist/RankedMode-0.4.1.zip, which players unzip into <game>/mods/
+# or: ../package.sh  → dist/RankedMode-0.4.2.zip, which players unzip into <game>/mods/
 ```
 
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it
@@ -72,6 +72,11 @@ local one during development), create `~/.local/share/SlayTheSpire2/ranked_mode/
 
 The Ranked button is in **Singleplayer** next to Daily (it uses the Dread icon). The base game hides Singleplayer while a run save
 exists, so finish or abandon your current run first.
+
+**Custom card picture:** put a PNG named `ranked_icon.png` in `mod/RankedMode/` (it's copied by
+`-t:Install` and included by `package.sh`), or straight into `<game>/mods/RankedMode/`. The game's card pictures
+are **378 × 288** and sit inside a decorative frame, so use that size or the same 21:16 shape. Without the file,
+the card uses the Dread icon.
 
 Local mod state is in `~/.local/share/SlayTheSpire2/ranked_mode/state.json`: your player token, the
 active ranked run, results waiting to upload, and the ranked seeds you've played.

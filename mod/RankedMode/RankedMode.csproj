@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>RankedMode</AssemblyName>
     <RootNamespace>RankedMode</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <!-- Override on the command line: dotnet build -p:Sts2Dir=/path/to/Slay\ the\ Spire\ 2 -->
@@ -26,6 +26,7 @@
   <Target Name="Install" DependsOnTargets="Build">
     <MakeDir Directories="$(ModInstallDir)" />
     <Copy SourceFiles="$(TargetPath);RankedMode.json" DestinationFolder="$(ModInstallDir)" />
+    <Copy SourceFiles="ranked_icon.png" DestinationFolder="$(ModInstallDir)" Condition="Exists('ranked_icon.png')" />
     <Message Importance="high" Text="Installed RankedMode to $(ModInstallDir)" />
   </Target>
 
