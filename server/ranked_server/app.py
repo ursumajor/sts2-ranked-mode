@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from . import windows as win
 from .admin import mount_admin
 from .pages import VIEWER_HTML, render_home, render_not_found, render_window, run_file_response
-from .viewer import build_viewer
+from .viewer import build_viewer, killed_by
 from .config import Settings, load_env_file
 from .db import Database
 from .validation import RejectedRun, check_run, check_run_file
@@ -399,6 +399,8 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
             "window_id": row["window_id"],
             "seed": row["window_seed"],
         }
+        if not row["victory"] and not row["abandoned"]:
+            meta["killed_by"] = killed_by(row["run_file"])
         return build_viewer(
             json.loads(row["run_json"]),
             json.loads(row["map_log"]) if row["map_log"] else None,

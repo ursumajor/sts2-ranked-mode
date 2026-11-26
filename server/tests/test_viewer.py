@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from ranked_server.app import create_app
 from ranked_server.config import Settings
 from ranked_server.validation import encode_daily_score
-from ranked_server.viewer import build_viewer, pretty
+from ranked_server.viewer import build_viewer, card_name, events, killed_by, pretty
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "dread_run.json").read_text())
 T = int(datetime(2026, 11, 25, 19, 0, tzinfo=timezone.utc).timestamp())
@@ -126,3 +126,32 @@ def test_unlogged_deck_change_marks_earlier_floors_approximate():
     by_floor = _details_by_floor(build_viewer(run, None, FIXTURE["window_maps"], {}))
     assert all(by_floor[g].get("deck_approximate") for g in range(6))
     assert not any(by_floor[g].get("deck_approximate") for g in range(6, 31))
+
+
+def test_event_options_and_card_names():
+    assert events([{"title": {"key": "ROOM_FULL_OF_CHEESE.pages.INITIAL.options.GORGE.title", "table": "events"}}]) \
+        == ["Room Full Of Cheese → Gorge"]
+    # Several pages of one event are joined; a relic-table title (ancients) is just the name.
+    assert events([{"title": {"key": "X_EVENT.pages.INITIAL.options.A.title"}}, {"title": {"key": "X_EVENT.pages.TWO.options.B.title"}},
+                   {"title": {"key": "NEOWS_BONES.title", "table": "relics"}}]) == ["X Event → A → B", "Neows Bones"]
+    assert card_name(("CARD.DEFEND_REGENT", 1, "ENCHANTMENT.SPIRAL", 1)) == "Defend Regent+ (Spiral)"
+    assert card_name(("CARD.BASH", 0, "ENCHANTMENT.SHARP", 3)) == "Bash (Sharp 3)"
+
+
+def test_floor_details_show_monsters_offers_and_enchantments():
+    v = build_viewer(FIXTURE["run"], None, FIXTURE["window_maps"], {})
+    by_floor = _details_by_floor(v)
+    assert by_floor[2]["rooms"][0]["monsters"] == ["Toadpole", "Toadpole"]
+    assert "Wrought In War+" in [c["name"] for c in by_floor[1]["card_choices"]]  # offered already upgraded
+    assert by_floor[4]["events"] == ["Spiraling Whirlpool → Observe"]
+    # Defend Regent was enchanted with Spiral on floor 4: not in the deck going into 4, there going into 5.
+    assert not any("Spiral" in c for c in by_floor[4]["deck_before"])
+    assert "Defend Regent (Spiral)" in by_floor[5]["deck_before"] and "Defend Regent+ (Spiral)" in v["deck"]
+
+
+def test_killed_by_comes_from_run_file():
+    assert killed_by(json.dumps({"killed_by_encounter": "ENCOUNTER.SNAPPING_JAXFRUIT_NORMAL", "killed_by_event": "NONE.NONE"})) \
+        == "Snapping Jaxfruit"
+    assert killed_by(json.dumps({"killed_by_encounter": "NONE.NONE", "killed_by_event": "EVENT.SPIRALING_WHIRLPOOL"})) \
+        == "Spiraling Whirlpool"
+    assert killed_by(None) == "" and killed_by("not json") == ""

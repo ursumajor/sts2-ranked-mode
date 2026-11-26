@@ -267,6 +267,7 @@ function showFinalState() {
   const r = data.run || {};
   const card = el('div', 'detail-card');
   addRow(card, 'Result', r.victory ? 'Victory' : (r.abandoned ? 'Abandoned' : 'Defeat'), r.victory ? 'positive' : 'negative');
+  addRow(card, 'Killed by', r.killed_by, 'negative');
   addRow(card, 'Floors', r.floors);
   addRow(card, 'Time', fmtTime(r.run_time));
   if (r.ascension) addRow(card, 'Ascension', r.ascension);
@@ -326,6 +327,10 @@ function showDetail(n, act) {
   if (d.hp != null) addRow(card, 'HP', `${d.hp} / ${d.max_hp}`, d.hp < d.max_hp * 0.5 ? 'negative' : '');
   if (d.gold != null) addRow(card, 'Gold', `${d.gold}g`, 'positive');
   (d.rooms || []).forEach(x => { if (x.turns) addRow(card, 'Turns', x.turns); });
+  (d.rooms || []).forEach(x => {
+    const m = x.monsters || [];
+    if (m.length && !(m.length === 1 && m[0] === x.name)) addTags(card, 'Monsters', m);  // skip if it just repeats the encounter
+  });
   if (d.damage_taken) addRow(card, 'Damage taken', '-' + d.damage_taken, 'negative');
   if (d.hp_healed) addRow(card, 'Healed', '+' + d.hp_healed, 'positive');
   if (d.max_hp_gained) addRow(card, 'Max HP gained', '+' + d.max_hp_gained, 'positive');

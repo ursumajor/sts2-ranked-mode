@@ -15,7 +15,9 @@ A path visits one point per row, so history entry k of an act is the point on ro
 
 from __future__ import annotations
 
+import json
 import re
+from collections import Counter
 from typing import Any
 
 Coord = tuple[int, int]
@@ -42,6 +44,39 @@ def _loc_key(title: Any) -> str:
     if isinstance(title, dict):
         title = title.get("key", "")
     return pretty(str(title).split(".")[0]) if title else ""
+
+
+def event_choice(title: Any) -> tuple[str, str]:
+    """('ROOM_FULL_OF_CHEESE.pages.INITIAL.options.GORGE.title') -> ('Room Full Of Cheese', 'Gorge')."""
+    key = str(title.get("key", "")) if isinstance(title, dict) else str(title or "")
+    parts = key.split(".")
+    option = parts[parts.index("options") + 1] if "options" in parts[:-1] else ""
+    return pretty(parts[0]), pretty(option)
+
+
+def events(choices: list) -> list[str]:
+    """Each event visited, with the options picked in order: 'Colorful Philosophers → Fool'."""
+    out: list[tuple[str, list[str]]] = []
+    for c in choices or []:
+        if not isinstance(c, dict) or not c.get("title"):
+            continue
+        name, option = event_choice(c["title"])
+        if not out or out[-1][0] != name:
+            out.append((name, []))
+        if option:
+            out[-1][1].append(option)
+    return [" → ".join([name, *opts]) for name, opts in out]
+
+
+def killed_by(run_file: str | None) -> str:
+    """What ended a lost run, from the game's .run file (older mods don't upload one): '' if unknown."""
+    try:
+        data = json.loads(run_file) if run_file else {}
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return pretty(data.get("killed_by_encounter")) or pretty(data.get("killed_by_event"))
 
 
 def _coord(c: dict) -> Coord:
@@ -111,11 +146,12 @@ def floor_detail(entry: dict) -> dict:
         return [pretty(x) for x in stats.get(key) or [] if x]
 
     def cards(key):
-        return [pretty(c.get("id")) for c in stats.get(key) or [] if isinstance(c, dict)]
+        return [card_name(_card_key(c)) for c in stats.get(key) or [] if isinstance(c, dict)]
 
     d: dict[str, Any] = {
         "point_type": entry.get("map_point_type"),
-        "rooms": [{"name": pretty(r.get("model_id")), "type": r.get("room_type"), "turns": r.get("turns_taken")} for r in rooms],
+        "rooms": [{"name": pretty(r.get("model_id")), "type": r.get("room_type"), "turns": r.get("turns_taken"),
+                   "monsters": [pretty(m) for m in r.get("monster_ids") or [] if m]} for r in rooms],
         "hp": stats.get("current_hp"),
         "max_hp": stats.get("max_hp"),
         "gold": stats.get("current_gold"),
@@ -124,12 +160,12 @@ def floor_detail(entry: dict) -> dict:
         if stats.get(key):
             d[key] = stats[key]
     lists = {
-        "card_choices": [{"name": pretty((c.get("card") or {}).get("id")), "picked": bool(c.get("was_picked"))} for c in stats.get("card_choices") or []],
+        "card_choices": [{"name": card_name(_card_key(c.get("card") or {})), "picked": bool(c.get("was_picked"))} for c in stats.get("card_choices") or []],
         "relic_choices": [{"name": pretty(c.get("choice")), "picked": bool(c.get("was_picked"))} for c in stats.get("relic_choices") or []],
         "potion_choices": [{"name": pretty(c.get("choice")), "picked": bool(c.get("was_picked"))} for c in stats.get("potion_choices") or []],
         "ancient_choices": [{"name": _loc_key(c.get("title")) or pretty(c.get("TextKey")), "picked": bool(c.get("was_chosen"))}
                             for c in stats.get("ancient_choice") or []],
-        "events": [_loc_key(c.get("title")) for c in stats.get("event_choices") or [] if c.get("title")],
+        "events": events(stats.get("event_choices")),
         "rest_site": [str(x).replace("_", " ").title() for x in stats.get("rest_site_choices") or []],
         "cards_gained": cards("cards_gained"),
         "cards_removed": cards("cards_removed"),
@@ -147,15 +183,23 @@ def floor_detail(entry: dict) -> dict:
     return d
 
 
-CardKey = tuple[str, int]  # (card id, upgrade level)
+CardKey = tuple[str, int, str, int]  # (card id, upgrade level, enchantment id or "", enchantment amount)
+NO_ENCHANT = ("", 0)
 
 
 def _card_key(c: Any) -> CardKey:
-    return (str(c.get("id")), int(c.get("current_upgrade_level") or 0)) if isinstance(c, dict) else ("", 0)
+    if not isinstance(c, dict):
+        return ("", 0, *NO_ENCHANT)
+    ench = c.get("enchantment") if isinstance(c.get("enchantment"), dict) else {}
+    return (str(c.get("id")), int(c.get("current_upgrade_level") or 0), str(ench.get("id") or ""), int(ench.get("amount") or 0))
 
 
 def card_name(key: CardKey) -> str:
-    return pretty(key[0]) + "+" * key[1]
+    """'Defend Regent+ (Spiral)'; the enchantment amount is shown only when it's above 1."""
+    name = pretty(key[0]) + "+" * key[1]
+    if key[2]:
+        name += f" ({pretty(key[2])}{f' {key[3]}' if key[3] > 1 else ''})"
+    return name
 
 
 def _stats(entry: dict) -> dict:
@@ -168,8 +212,6 @@ def deck_timeline(deck: list, history: list[dict]) -> tuple[list[list[str]], int
     Returns (decks, exact_from): decks[g] is the sorted card names before floor g's changes. If a floor's
     changes don't match the deck (something the history doesn't log), floors before exact_from are approximate.
     """
-    from collections import Counter
-
     cur = Counter(_card_key(c) for c in deck if isinstance(c, dict))
     out: list[list[str]] = [[] for _ in history]
     exact_from = 0
@@ -178,8 +220,8 @@ def deck_timeline(deck: list, history: list[dict]) -> tuple[list[list[str]], int
         if cur[key] > 0:
             cur[key] -= 1
             return True
-        if any_upgrade:  # e.g. gained, then upgraded on the same floor
-            for k in sorted(cur, key=lambda k: k[1]):
+        if any_upgrade:  # e.g. gained, then upgraded or enchanted on the same floor
+            for k in sorted(cur, key=lambda k: (k[1], k[2] != "")):
                 if k[0] == key[0] and cur[k] > 0:
                     cur[k] -= 1
                     return True
@@ -193,12 +235,22 @@ def deck_timeline(deck: list, history: list[dict]) -> tuple[list[list[str]], int
         for t in st.get("cards_transformed") or []:
             ok &= take(_card_key(t.get("final_card") or {}), any_upgrade=True)
             cur[_card_key(t.get("original_card") or {})] += 1
+        for t in st.get("cards_enchanted") or []:
+            snap = _card_key(t.get("card") or {})
+            ench = str(t.get("enchantment") or snap[2])
+            found = [k for k in cur if k[0] == snap[0] and k[2] == ench and cur[k] > 0]
+            if found:
+                k = snap if snap in found else found[0]
+                cur[k] -= 1
+                cur[(k[0], k[1], *NO_ENCHANT)] += 1
+            else:
+                ok = False
         for cid in st.get("upgraded_cards") or []:
             ups = [k for k in cur if k[0] == cid and k[1] > 0 and cur[k] > 0]
             if ups:
                 k = max(ups, key=lambda k: k[1])
                 cur[k] -= 1
-                cur[(cid, k[1] - 1)] += 1
+                cur[(cid, k[1] - 1, k[2], k[3])] += 1
             else:
                 ok = False
         for c in st.get("cards_gained") or []:
