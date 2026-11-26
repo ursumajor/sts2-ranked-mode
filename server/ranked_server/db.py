@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS windows (
     setup_key        TEXT NOT NULL,
     game_version     TEXT,
     character        TEXT,
+    maps             TEXT,      -- per-act maps rebuilt from the seed by tools/MapGen (backfill)
     created_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS windows_time ON windows (starts_at, ends_at);
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS runs (
     mod_version    TEXT,
     run_json       TEXT,
     run_file       TEXT,      -- the game's own run history file (<start_time>.run), verbatim
+    map_log        TEXT,      -- per-act maps and visited coordinates captured by the mod (0.4.0+)
     UNIQUE (window_id, player_id)
 );
 CREATE INDEX IF NOT EXISTS runs_board ON runs (window_id, status, valid, score);
@@ -90,6 +92,10 @@ class Database:
         run_cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(runs)")}
         if "run_file" not in run_cols:  # databases created before .run files were uploaded
             self._conn.execute("ALTER TABLE runs ADD COLUMN run_file TEXT")
+        if "map_log" not in run_cols:  # databases created before the mod sent map logs
+            self._conn.execute("ALTER TABLE runs ADD COLUMN map_log TEXT")
+        if "maps" not in cols:  # databases created before map backfill
+            self._conn.execute("ALTER TABLE windows ADD COLUMN maps TEXT")
         if "schedule_id" not in cols:  # databases created before recurring schedules lived in the DB
             self._conn.execute("ALTER TABLE windows ADD COLUMN schedule_id INTEGER")
         self.lock = threading.RLock()

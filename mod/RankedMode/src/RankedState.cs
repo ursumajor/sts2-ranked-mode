@@ -37,6 +37,9 @@ internal static class RankedState
     public static readonly HashSet<string> KnownSeeds = new();
     public static readonly List<PendingSubmission> Pending = new();
 
+    /// <summary>For the active ranked run: act index -> (saved_map JSON, visited coordinates JSON).</summary>
+    public static readonly SortedDictionary<int, (string Map, string Visited)> MapLog = new();
+
     private static string FilePath => Path.Combine(RankedConfig.Dir, "state.json");
 
     public static bool IsRankedSeed(string? seed) => seed != null && KnownSeeds.Contains(seed);
@@ -67,6 +70,21 @@ internal static class RankedState
                 StartedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             };
             KnownSeeds.Add(seed);
+            MapLog.Clear();
+            Save();
+        }
+    }
+
+    /// <summary>Records the current act's map and path; saves only when something changed.</summary>
+    public static void RecordAct(int actIndex, string map, string visited)
+    {
+        lock (Lock)
+        {
+            if (MapLog.TryGetValue(actIndex, out var old) && old.Map == map && old.Visited == visited)
+            {
+                return;
+            }
+            MapLog[actIndex] = (map, visited);
             Save();
         }
     }
@@ -83,6 +101,7 @@ internal static class RankedState
             if (Active?.RunId == runId)
             {
                 Active = null;
+                MapLog.Clear();
             }
             Save();
         }
@@ -93,6 +112,7 @@ internal static class RankedState
         lock (Lock)
         {
             Active = null;
+            MapLog.Clear();
             Save();
         }
     }
@@ -142,6 +162,16 @@ internal static class RankedState
                         StartedAt = a["started_at"]?.GetValue<long>() ?? 0,
                     };
                 }
+                if (root["map_log"] is JsonObject log)
+                {
+                    foreach (var (k, v) in log)
+                    {
+                        if (int.TryParse(k, out int act) && v is JsonObject o)
+                        {
+                            MapLog[act] = (o["map"]?.GetValue<string>() ?? "", o["visited"]?.GetValue<string>() ?? "[]");
+                        }
+                    }
+                }
                 if (root["known_seeds"] is JsonArray seeds)
                 {
                     foreach (var s in seeds)
@@ -190,6 +220,8 @@ internal static class RankedState
                         ["window_id"] = Active.WindowId,
                         ["started_at"] = Active.StartedAt,
                     },
+                ["map_log"] = new JsonObject(MapLog.Select(kv => new KeyValuePair<string, JsonNode?>(
+                    kv.Key.ToString(), new JsonObject { ["map"] = kv.Value.Map, ["visited"] = kv.Value.Visited }))),
                 ["known_seeds"] = new JsonArray(KnownSeeds.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray()),
                 ["pending"] = new JsonArray(Pending.Select(p => (JsonNode?)new JsonObject
                 {

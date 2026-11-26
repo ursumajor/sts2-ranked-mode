@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 
 from . import windows as win
 from .admin import mount_admin
-from .pages import render_home, render_not_found, render_window, run_file_response
+from .pages import VIEWER_HTML, render_home, render_not_found, render_window, run_file_response
+from .viewer import build_viewer
 from .config import Settings, load_env_file
 from .db import Database
 from .validation import RejectedRun, check_run, check_run_file
@@ -51,6 +52,13 @@ class FinishRequest(BaseModel):
     run: dict[str, Any]
     # The game's run history file (<start_time>.run) as written to disk. Optional for older mods.
     run_file: str | None = Field(default=None, max_length=2_000_000)
+    # Per-act maps and visited coordinates captured by the mod (0.4.0+): {"acts": {"0": {"map": ..., "visited": [...]}}}
+    map_log: dict[str, Any] | None = None
+
+
+class WindowMapsRequest(BaseModel):
+    # {"0": {"act_id": "ACT.UNDERDOCKS", "map": <saved_map>}, ...} as produced by tools/MapGen
+    acts: dict[str, dict[str, Any]]
 
 
 class WindowCreateRequest(BaseModel):
@@ -195,7 +203,7 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
             db.execute(
                 "UPDATE runs SET status = 'finished', finished_at = ?, victory = ?, abandoned = ?, floors = ?,"
                 " badges = ?, run_time = ?, score = ?, ascension = ?, character = ?, valid = ?, flags = ?,"
-                " game_version = ?, mod_version = ?, run_json = ?, run_file = ? WHERE id = ?",
+                " game_version = ?, mod_version = ?, run_json = ?, run_file = ?, map_log = ? WHERE id = ?",
                 (
                     now,
                     int(checked.victory),
@@ -212,6 +220,7 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
                     body.mod_version,
                     json.dumps(body.run, separators=(",", ":")),
                     body.run_file,
+                    json.dumps(body.map_log, separators=(",", ":")) if body.map_log else None,
                     run_id,
                 ),
             )
@@ -368,6 +377,67 @@ def create_app(settings: Settings | None = None, clock: Callable[[], int] = win.
             (now, now, now),
         )
         return render_home([dict(r) for r in rows], now)
+
+    def viewer_data(run_id: str, *, public: bool) -> dict | None:
+        row = db.one(
+            "SELECT r.*, p.name AS player_name, w.submit_deadline, w.maps AS window_maps, w.seed AS window_seed"
+            " FROM runs r JOIN players p ON p.id = r.player_id JOIN windows w ON w.id = r.window_id WHERE r.id = ?",
+            (run_id,),
+        )
+        if row is None or row["run_json"] is None:
+            return None
+        if public and (not row["valid"] or t() < row["submit_deadline"]):
+            return None
+        meta = {
+            "player": row["player_name"],
+            "character": row["character"],
+            "victory": bool(row["victory"]),
+            "abandoned": bool(row["abandoned"]),
+            "floors": row["floors"],
+            "run_time": row["run_time"],
+            "ascension": row["ascension"],
+            "window_id": row["window_id"],
+            "seed": row["window_seed"],
+        }
+        return build_viewer(
+            json.loads(row["run_json"]),
+            json.loads(row["map_log"]) if row["map_log"] else None,
+            json.loads(row["window_maps"]) if row["window_maps"] else None,
+            meta,
+        )
+
+    @app.get("/runs/{run_id}/viewer.json")
+    def public_viewer_json(run_id: str):
+        data = viewer_data(run_id, public=True)
+        if data is None:
+            raise HTTPException(404, "run not viewable yet")
+        return data
+
+    @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
+    def public_viewer_page(run_id: str):
+        if viewer_data(run_id, public=True) is None:
+            return HTMLResponse(render_not_found(), 404)
+        return HTMLResponse(VIEWER_HTML)
+
+    app.state.viewer_data = viewer_data
+
+    @app.put(API + "/admin/windows/{window_id}/maps", dependencies=[Depends(require_admin)])
+    def admin_put_window_maps(window_id: str, body: WindowMapsRequest):
+        with db.lock:
+            if db.one("SELECT 1 FROM windows WHERE id = ?", (window_id,)) is None:
+                raise HTTPException(404, "no such window")
+            db.execute("UPDATE windows SET maps = ? WHERE id = ?", (json.dumps(body.acts, separators=(",", ":")), window_id))
+        return {"window_id": window_id, "acts": sorted(body.acts)}
+
+    @app.get(API + "/admin/backfill", dependencies=[Depends(require_admin)])
+    def admin_backfill_candidates():
+        """Windows whose runs would benefit from seed-rebuilt maps: finished runs without a full map_log."""
+        rows = db.all(
+            "SELECT w.id AS window_id, MIN(r.id) AS run_id FROM windows w JOIN runs r ON r.window_id = w.id"
+            " WHERE r.status = 'finished' AND r.run_json IS NOT NULL AND r.map_log IS NULL AND w.maps IS NULL"
+            " GROUP BY w.id ORDER BY w.starts_at"
+        )
+        return [dict(r) for r in rows]
 
     @app.get("/runs/{run_id}.run")
     def public_run_file(run_id: str):

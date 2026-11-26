@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 
 from fastapi.responses import Response
 
+from pathlib import Path
+
+VIEWER_HTML = (Path(__file__).parent / "static" / "viewer.html").read_text(encoding="utf-8")
+
 e = html.escape
 
 
@@ -108,8 +112,9 @@ def render_window(board: dict, now: int) -> str:
     for r in board["entries"]:
         file_cell = ""
         if files_public:
-            file_cell = (f"<td><a href='/runs/{e(r['run_id'])}.run'>.run</a></td>" if r.get("has_run_file")
-                         else "<td class=muted>-</td>")
+            view = f"<a href='/runs/{e(r['run_id'])}/view'>View</a>"
+            dl = f" · <a href='/runs/{e(r['run_id'])}.run'>.run</a>" if r.get("has_run_file") else ""
+            file_cell = f"<td>{view}{dl}</td>"
         rows += (
             f"<tr><td class=n>{r['rank']}</td><td>{e(r['player'])}</td><td>{_result(r)}</td>"
             f"<td class=n>{r['floors']}</td><td class=n>{_duration(r['run_time'])}</td>{file_cell}</tr>"
@@ -129,7 +134,7 @@ def render_window(board: dict, now: int) -> str:
 <p class=muted>{e(_character(w.get('character')))} · {_time(w['starts_at'])} → {_time(w['ends_at'])}<br>
 {when} · {board['in_progress']} in progress{seed}</p>
 <table><thead><tr><th class=n>#</th><th>Player</th><th>Result</th><th class=n>Floors</th>
-<th class=n>Time</th>{"<th>Run file</th>" if files_public else ""}</tr></thead><tbody>{rows}</tbody></table>
+<th class=n>Time</th>{"<th>Run</th>" if files_public else ""}</tr></thead><tbody>{rows}</tbody></table>
 """
     return _page(f"{w['id']} · STS2 Ranked", body)
 

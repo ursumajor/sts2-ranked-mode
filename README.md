@@ -47,7 +47,7 @@ You need the .NET 9 SDK. It was installed for this machine at `~/.dotnet`: `expo
 ```bash
 cd mod/RankedMode
 dotnet build -c Release -t:Install      # copies RankedMode.dll + RankedMode.json to <game>/mods/RankedMode/
-# or: ../package.sh  → dist/RankedMode-0.3.0.zip, which players unzip into <game>/mods/
+# or: ../package.sh  → dist/RankedMode-0.4.0.zip, which players unzip into <game>/mods/
 ```
 
 On first launch the game asks you to agree to loading mods. Note that **when STS2 first runs modded, it
@@ -178,6 +178,31 @@ stores it.
 - **Public:** a run's page gets a "Run file" column once its submit deadline passes. Before then the file
   would reveal the seed.
 - Files from mods older than 0.2.0 aren't sent, and that isn't flagged.
+
+## Run viewer
+
+Once a run's submit deadline has passed, each player on its leaderboard page gets a **View** link
+(`/runs/<id>/view`). It shows that player's run on the act maps: every node, the route they took in gold, and
+a detail panel per floor (encounter, HP, gold, damage, cards, relics, potions and ancient choices, rest site,
+upgrades, removals, transforms, purchases), plus their final relics and deck. Admins can open any run at any
+time from `/admin` → window → **View**. The viewer is adapted from the STS Map Recorder viewer.
+
+The game only keeps the **current** act's map in the save, so:
+
+- **Mod 0.4.0+** records each act's real map and visited path as you play and sends them with the result
+  (`map_log`). The path is marked **exact**.
+- **Older runs:** maps are rebuilt from the seed with the game's own generator (`tools/MapGen`, run headlessly
+  against a local STS2 install) and uploaded per window. Paths are matched room type by room type
+  (**reconstructed** if only one route fits, **approximate** if several do). On v0.113.1 history, 100 of 114
+  acts gave a unique path. The final act always uses the save's own map and path.
+
+Backfill maps for older windows from a machine with the same game version installed:
+
+```bash
+dotnet build -c Release tools/MapGen
+RANKED_ADMIN_KEY=... python3 tools/backfill_maps.py          # --server defaults to spire.ursumajor.com
+dotnet tools/MapGen/bin/Release/net9.0/mapgen.dll --verify <current_run.save>   # sanity check: "OK"
+```
 
 ## Scoring and server-side checks
 

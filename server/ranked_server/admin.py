@@ -23,12 +23,12 @@ from typing import Callable
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import windows as win
 from .config import DEFAULT_CHARACTERS, Settings
 from .db import Database
-from .pages import run_file_response
+from .pages import VIEWER_HTML, run_file_response
 
 COOKIE = "ranked_admin"
 SESSION_SECONDS = 12 * 3600
@@ -325,6 +325,21 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             return redirect(err="That run has no .run file.")
         return harden(run_file_response(row["run_file"], row["window_id"], row["name"]))
 
+    @app.get("/admin/runs/{run_id}/viewer.json")
+    def admin_viewer_json(request: Request, run_id: str):
+        if not session_of(request):
+            return redirect(err="Please log in.")
+        data = app.state.viewer_data(run_id, public=False)
+        if data is None:
+            return harden(Response("no run data", status_code=404))
+        return harden(JSONResponse(data))
+
+    @app.get("/admin/runs/{run_id}/view", response_class=HTMLResponse)
+    def admin_viewer_page(request: Request, run_id: str):
+        if not session_of(request):
+            return redirect(err="Please log in.")
+        return harden(HTMLResponse(VIEWER_HTML))
+
     @app.get("/admin/windows/{wid}", response_class=HTMLResponse)
     def admin_window_runs(request: Request, wid: str):
         session = session_of(request)
@@ -348,7 +363,8 @@ def mount_admin(app: FastAPI, db: Database, settings: Settings, clock: Callable[
             flags = ", ".join(json_loads(r["flags"])) if r["flags"] else ""
             valid = "" if r["status"] != "finished" else ("<span class='tag open'>valid</span>" if r["valid"]
                                                           else f"<span class=err>flagged</span> <small>{e(flags)}</small>")
-            dl = f"<a href='/admin/runs/{e(r['id'])}.run'>.run</a>" if r["has_file"] else "<span class=muted>-</span>"
+            dl = (f"<a href='/admin/runs/{e(r['id'])}/view'>View</a>" if r["status"] == "finished" else "") + (
+                f" · <a href='/admin/runs/{e(r['id'])}.run'>.run</a>" if r["has_file"] else "")
             raw = f"<small><code>{e(r['id'][:8])}</code></small>"
             rows += (
                 f"<tr><td>{e(r['name'])}<br><small class=muted>{e(r['steam_id'])}</small></td><td>{result}</td>"

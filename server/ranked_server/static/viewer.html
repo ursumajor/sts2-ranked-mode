@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>STS2 Ranked · Run Viewer</title>
+<!-- Adapted from the STS Map Recorder run viewer (github.com/ursumajor/STS-MapRecorder/viewer) for STS2 ranked runs. -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0d7c6; font-family: 'Segoe UI', sans-serif; min-height: 100vh; }
+  a { color: #c9a84c; }
+
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #header { background: #16213e; border-bottom: 1px solid #c9a84c44; padding: 12px 20px; display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+  #header .run-title { font-size: 1.2rem; color: #c9a84c; }
+  #header .run-meta { font-size: 0.85rem; color: #888; }
+  #header .back { margin-left: auto; font-size: 0.85rem; }
+
+  #act-tabs { display: flex; gap: 4px; background: #16213e; padding: 0 20px 10px; border-bottom: 1px solid #c9a84c22; flex-shrink: 0; align-items: flex-end; }
+  .act-tab { padding: 6px 20px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.9rem; color: #888; border: 1px solid transparent; border-bottom: none; transition: all 0.15s; }
+  .act-tab:hover { color: #c9a84c; }
+  .act-tab.active { background: #1a1a2e; color: #c9a84c; border-color: #c9a84c44; }
+  .act-tab .sub { font-size: 0.72rem; color: #666; margin-left: 6px; }
+  #quality { margin-left: auto; font-size: 0.78rem; color: #888; padding-bottom: 6px; }
+  #quality.warn { color: #e0a85c; }
+
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #map-area { flex: 1; overflow: auto; padding: 20px; display: flex; align-items: flex-start; justify-content: center; }
+  svg#map-svg { display: block; }
+  #map-msg { color: #888; padding: 40px; text-align: center; }
+
+  #sidebar { width: 320px; background: #16213e; border-left: 1px solid #c9a84c22; overflow-y: auto; flex-shrink: 0; padding: 16px; }
+  #sidebar h3 { color: #c9a84c; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px; }
+  #sidebar h3.later { margin-top: 20px; }
+  .sidebar-placeholder { color: #555; font-size: 0.9rem; text-align: center; margin: 24px 0; }
+  .detail-card { background: #1a1a2e; border: 1px solid #c9a84c33; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .detail-card .floor-label { font-size: 0.75rem; color: #888; margin-bottom: 6px; }
+  .detail-card .room-name { font-size: 1rem; color: #e0d7c6; margin-bottom: 8px; }
+  .detail-row { display: flex; justify-content: space-between; gap: 10px; font-size: 0.82rem; padding: 3px 0; border-bottom: 1px solid #ffffff08; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .label { color: #888; white-space: nowrap; }
+  .detail-row .value { color: #e0d7c6; text-align: right; }
+  .value.positive { color: #5cb85c; } .value.negative { color: #e05c5c; }
+  .value.card { color: #7ec8e3; } .value.relic { color: #c9a84c; }
+  .tag-block { margin-top: 8px; }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .tag { padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; background: #c9a84c22; color: #c9a84c; border: 1px solid #c9a84c44; }
+  .tag.skipped { background: #88888822; color: #888; border-color: #88888844; }
+  .tag.picked { background: #7ec8e322; color: #7ec8e3; border-color: #7ec8e344; }
+  .tag.relic { background: #c9a84c22; color: #c9a84c; }
+
+  #legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 20px; background: #16213e; border-top: 1px solid #c9a84c22; flex-shrink: 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #aaa; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div>
+      <div class="run-title" id="run-title">Loading…</div>
+      <div class="run-meta" id="run-meta"></div>
+    </div>
+    <a class="back" id="back-link" href="/">← Leaderboard</a>
+  </div>
+  <div id="act-tabs"><div id="quality"></div></div>
+  <div id="main">
+    <div id="map-area"><svg id="map-svg"></svg></div>
+    <div id="sidebar">
+      <h3>Room Details</h3>
+      <div class="sidebar-placeholder" id="sidebar-placeholder">Hover over a room to see details</div>
+      <div id="sidebar-content"></div>
+      <h3 class="later">Relics</h3><div class="tag-list" id="relics"></div>
+      <h3 class="later">Final deck</h3><div class="tag-list" id="deck"></div>
+    </div>
+  </div>
+  <div id="legend"></div>
+</div>
+
+<script>
+// ── Constants (palette and icons from the original viewer) ─────────────────
+const ROOM = {
+  monster:   { color: '#9b59b6', label: 'Monster',   icon: '💀' },
+  elite:     { color: '#e05c5c', label: 'Elite',     icon: '⚔' },
+  boss:      { color: '#e67e22', label: 'Boss',      icon: '👁' },
+  rest_site: { color: '#27ae60', label: 'Rest Site', icon: '🔥' },
+  unknown:   { color: '#2980b9', label: 'Unknown',   icon: '?' },
+  shop:      { color: '#f1c40f', label: 'Shop',      icon: '$' },
+  treasure:  { color: '#c9a84c', label: 'Treasure',  icon: '💰' },
+  ancient:   { color: '#7ec8e3', label: 'Ancient',   icon: '✨' },
+};
+const FALLBACK = { color: '#666', label: 'Room', icon: '·' };
+const COL_W = 80, ROW_H = 60, NODE_R = 18, PAD_X = 50, PAD_Y = 40;
+const QUALITY = {
+  exact: ['', false],
+  reconstructed: ['Path rebuilt from the room types of each floor', false],
+  approximate: ['Several routes match this run; one of them is shown', true],
+  none: ['The path could not be matched to this map', true],
+  not_reached: ['Not reached in this run', false],
+  no_map: ['No map available for this act', true],
+};
+
+let data = null;
+let currentAct = 0;
+
+const $ = id => document.getElementById(id);
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  return el;
+}
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function fmtTime(s) {
+  if (s == null) return '';
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
+}
+const room = t => ROOM[t] || FALLBACK;
+
+// ── Load ───────────────────────────────────────────────────────────────────
+fetch('viewer.json', { credentials: 'same-origin' })
+  .then(r => { if (!r.ok) throw new Error(r.status === 404 ? 'This run is not viewable yet.' : `Error ${r.status}`); return r.json(); })
+  .then(d => { data = d; init(); })
+  .catch(err => { $('run-title').textContent = err.message; });
+
+function init() {
+  const r = data.run || {};
+  const outcome = r.victory ? '👑 Victory' : (r.abandoned ? '🚪 Abandoned' : '💀 Defeat');
+  const character = (r.character || '').split('.').pop().replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  $('run-title').textContent = `${r.player || 'Player'} — ${character || 'Unknown'} — ${outcome}`;
+  $('run-meta').textContent = [r.ascension ? `A${r.ascension}` : '', r.floors != null ? `Floor ${r.floors}` : '',
+    fmtTime(r.run_time), r.window_id || '', r.seed ? `Seed: ${r.seed}` : ''].filter(Boolean).join('  ·  ');
+  if (r.window_id && !location.pathname.startsWith('/admin/')) $('back-link').href = `/windows/${encodeURIComponent(r.window_id)}`;
+  if (location.pathname.startsWith('/admin/')) { $('back-link').href = `/admin/windows/${encodeURIComponent(r.window_id || '')}`; $('back-link').textContent = '← Admin'; }
+  document.title = `${r.player || 'Run'} · ${r.window_id || ''} · STS2 Ranked`;
+
+  const tabs = $('act-tabs');
+  data.acts.forEach((a, i) => {
+    const tab = el('div', 'act-tab', `Act ${a.index}`);
+    if (a.name) tab.appendChild(el('span', 'sub', a.name));
+    tab.addEventListener('click', () => switchAct(i));
+    tabs.insertBefore(tab, $('quality'));
+  });
+  (data.relics || []).forEach(n => $('relics').appendChild(el('span', 'tag relic', n)));
+  const counts = {};
+  (data.deck || []).forEach(n => counts[n] = (counts[n] || 0) + 1);
+  Object.entries(counts).forEach(([n, c]) => $('deck').appendChild(el('span', 'tag picked', c > 1 ? `${n} ×${c}` : n)));
+
+  const legend = $('legend');
+  for (const t of ['monster', 'elite', 'boss', 'rest_site', 'unknown', 'shop', 'treasure', 'ancient']) {
+    const item = el('div', 'legend-item'); const dot = el('div', 'legend-dot'); dot.style.background = ROOM[t].color;
+    item.append(dot, document.createTextNode(ROOM[t].label)); legend.appendChild(item);
+  }
+  const v = el('div', 'legend-item'); const vd = el('div', 'legend-dot'); vd.style.cssText = 'background:#888;border:2px solid #c9a84c';
+  v.append(vd, document.createTextNode('Visited')); legend.appendChild(v);
+
+  // Open the last act the player reached.
+  let last = 0; data.acts.forEach((a, i) => { if (a.reached) last = i; });
+  switchAct(last);
+}
+
+function switchAct(i) {
+  currentAct = i;
+  document.querySelectorAll('.act-tab').forEach((t, k) => t.classList.toggle('active', k === i));
+  $('sidebar-placeholder').style.display = '';
+  $('sidebar-content').innerHTML = '';
+  const a = data.acts[i];
+  const [msg, warn] = QUALITY[a.quality] || ['', false];
+  $('quality').textContent = msg; $('quality').className = warn ? 'warn' : '';
+  renderMap(a);
+}
+
+// ── Map ────────────────────────────────────────────────────────────────────
+function renderMap(act) {
+  const svg = $('map-svg');
+  const old = $('map-msg'); if (old) old.remove();
+  svg.innerHTML = '';
+  if (!act.nodes || !act.nodes.length) {
+    svg.setAttribute('width', 0); svg.setAttribute('height', 0);
+    const m = el('div', null, 'No map is available for this act.'); m.id = 'map-msg';
+    if (act.floors && act.floors.length) {
+      m.appendChild(el('div', null, 'Floors visited:'));
+      act.floors.forEach(f => {
+        const b = el('div', 'act-tab', `${f.floor}: ${room(f.point_type).label}`);
+        b.addEventListener('click', () => showDetail({ type: f.point_type, detail: f, floor: f.floor, visited: true }, act));
+        m.appendChild(b);
+      });
+    }
+    $('map-area').appendChild(m);
+    return;
+  }
+  const byId = Object.fromEntries(act.nodes.map(n => [n.id, n]));
+  const maxRow = Math.max(...act.nodes.map(n => n.row));
+  const width = act.width || 7;
+  const svgW = width * COL_W + PAD_X * 2;
+  const svgH = (maxRow + 1) * ROW_H + PAD_Y * 2;
+  svg.setAttribute('width', svgW); svg.setAttribute('height', svgH);
+  const nx = n => (n.role ? svgW / 2 : PAD_X + n.col * COL_W + COL_W / 2);   // start and bosses are centred
+  const ny = n => PAD_Y + (maxRow - n.row) * ROW_H;
+
+  const pathEdges = new Set();
+  (act.path || []).forEach((id, k, p) => { if (k) pathEdges.add(`${p[k - 1]}>${id}`); });
+
+  const edges = svgEl('g', { opacity: '0.35' });
+  act.nodes.forEach(n => (n.children || []).forEach(cid => {
+    const c = byId[cid]; if (!c) return;
+    const on = pathEdges.has(`${n.id}>${cid}`);
+    edges.appendChild(svgEl('line', { x1: nx(n), y1: ny(n), x2: nx(c), y2: ny(c),
+      stroke: on ? '#c9a84c' : '#444', 'stroke-width': on ? 2.5 : 1.5, 'stroke-linecap': 'round' }));
+  }));
+  svg.appendChild(edges);
+
+  act.nodes.forEach(n => {
+    const r = room(n.type);
+    const g = svgEl('g', { cursor: 'pointer', transform: `translate(${nx(n)},${ny(n)})` });
+    if (n.visited) g.appendChild(svgEl('circle', { r: NODE_R + 6, fill: r.color, opacity: '0.2' }));
+    g.appendChild(svgEl('circle', { r: NODE_R, fill: n.visited ? r.color : '#1a1a2e', stroke: r.color,
+      'stroke-width': n.visited ? 2.5 : 1.5, opacity: n.visited ? '1' : '0.5' }));
+    const text = svgEl('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central', fill: n.visited ? '#fff' : r.color,
+      'font-size': n.role === 'boss' || n.role === 'second_boss' ? '14' : (r.icon.length > 1 ? '11' : '14'),
+      'font-family': 'Segoe UI, sans-serif', opacity: n.visited ? '1' : '0.6', 'pointer-events': 'none' });
+    text.textContent = r.icon;
+    g.appendChild(text);
+    g.addEventListener('mouseenter', () => showDetail(n, act));
+    g.addEventListener('click', () => showDetail(n, act));
+    svg.appendChild(g);
+  });
+
+  // Floor labels: the floor number of the visited point in each row.
+  const rowFloor = {};
+  act.nodes.forEach(n => { if (n.visited) rowFloor[n.row] = n.floor; });
+  for (let row = 0; row <= maxRow; row++) {
+    if (rowFloor[row] == null) continue;
+    const label = svgEl('text', { x: PAD_X - 8, y: PAD_Y + (maxRow - row) * ROW_H, 'text-anchor': 'end',
+      'dominant-baseline': 'central', fill: '#555', 'font-size': '11', 'font-family': 'Segoe UI, sans-serif' });
+    label.textContent = rowFloor[row];
+    svg.appendChild(label);
+  }
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────────
+function addRow(card, label, value, cls) {
+  if (value == null || value === '') return;
+  const row = el('div', 'detail-row');
+  row.append(el('span', 'label', label), el('span', 'value ' + (cls || ''), String(value)));
+  card.appendChild(row);
+}
+function addTags(card, label, items, pickedKey) {
+  if (!items || !items.length) return;
+  const block = el('div', 'tag-block');
+  const head = el('div', 'detail-row'); head.appendChild(el('span', 'label', label)); block.appendChild(head);
+  const tags = el('div', 'tag-list');
+  items.forEach(it => {
+    if (typeof it === 'string') { tags.appendChild(el('span', 'tag', it)); return; }
+    tags.appendChild(el('span', 'tag ' + (it[pickedKey] ? 'picked' : 'skipped'), it.name));
+  });
+  if (pickedKey && items.every(it => !it[pickedKey])) tags.appendChild(el('span', 'tag picked', 'Skipped'));
+  block.appendChild(tags);
+  card.appendChild(block);
+}
+
+function showDetail(n, act) {
+  $('sidebar-placeholder').style.display = 'none';
+  const content = $('sidebar-content'); content.innerHTML = '';
+  const card = el('div', 'detail-card');
+  const r = room(n.type);
+  const d = n.detail || {};
+  let name = r.label;
+  if (n.role === 'boss') name = act.boss_name || 'Boss';
+  else if (n.role === 'second_boss') name = act.second_boss_name || 'Boss';
+  else if (n.role === 'start') name = act.ancient_name || 'Ancient';
+  const fought = (d.rooms || []).map(x => x.name).filter(Boolean);
+  if (fought.length && !n.role) name = `${r.label} — ${fought.join(', ')}`;
+  if (n.type === 'unknown' && d.rooms && d.rooms.length) name = `→ ${room(d.rooms[0].type === 'event' ? 'unknown' : d.rooms[0].type).label}${fought.length ? ' — ' + fought.join(', ') : ''}`;
+
+  card.appendChild(el('div', 'floor-label', n.floor != null ? `Floor ${n.floor}` : `Act ${act.index}`));
+  card.appendChild(el('div', 'room-name', `${r.icon} ${name}`));
+
+  if (!n.visited) { addRow(card, 'Status', 'Not visited'); content.appendChild(card); return; }
+  if (!n.detail) { addRow(card, 'Status', 'Visited', 'positive'); content.appendChild(card); return; }
+
+  if (d.hp != null) addRow(card, 'HP', `${d.hp} / ${d.max_hp}`, d.hp < d.max_hp * 0.5 ? 'negative' : '');
+  if (d.gold != null) addRow(card, 'Gold', `${d.gold}g`, 'positive');
+  (d.rooms || []).forEach(x => { if (x.turns) addRow(card, 'Turns', x.turns); });
+  if (d.damage_taken) addRow(card, 'Damage taken', '-' + d.damage_taken, 'negative');
+  if (d.hp_healed) addRow(card, 'Healed', '+' + d.hp_healed, 'positive');
+  if (d.max_hp_gained) addRow(card, 'Max HP gained', '+' + d.max_hp_gained, 'positive');
+  if (d.max_hp_lost) addRow(card, 'Max HP lost', '-' + d.max_hp_lost, 'negative');
+  if (d.gold_gained) addRow(card, 'Gold gained', '+' + d.gold_gained, 'positive');
+  if (d.gold_spent) addRow(card, 'Gold spent', '-' + d.gold_spent, 'negative');
+  if (d.gold_lost) addRow(card, 'Gold lost', '-' + d.gold_lost, 'negative');
+  if (d.gold_stolen) addRow(card, 'Gold stolen', '-' + d.gold_stolen, 'negative');
+  (d.events || []).forEach(e => addRow(card, 'Event', e));
+  (d.rest_site || []).forEach(x => addRow(card, 'Rest site', x, 'positive'));
+  addTags(card, 'Ancient offered', d.ancient_choices, 'picked');
+  addTags(card, 'Cards offered', d.card_choices, 'picked');
+  addTags(card, 'Relics offered', d.relic_choices, 'picked');
+  addTags(card, 'Potions offered', d.potion_choices, 'picked');
+  addTags(card, 'Cards gained', d.cards_gained);
+  addTags(card, 'Bought', d.bought);
+  addTags(card, 'Upgraded', d.upgraded);
+  addTags(card, 'Removed', d.cards_removed);
+  addTags(card, 'Transformed', (d.transformed || []).map(t => `${t.from} → ${t.to}`));
+  addTags(card, 'Enchanted', (d.enchanted || []).map(t => `${t.card} (${t.enchantment})`));
+  addTags(card, 'Potions used', d.potions_used);
+  addTags(card, 'Potions discarded', d.potions_discarded);
+  addTags(card, 'Relics lost', d.relics_removed);
+  content.appendChild(card);
+}
+</script>
+</body>
+</html>

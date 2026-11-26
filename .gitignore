@@ -14,3 +14,5 @@ mod/PatchCheck/obj/
 mod/PatchCheck/out/
 server/.env
 server/server.log
+tools/MapGen/bin/
+tools/MapGen/obj/

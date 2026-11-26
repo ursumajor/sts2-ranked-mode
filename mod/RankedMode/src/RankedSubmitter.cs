@@ -55,6 +55,15 @@ internal static class RankedSubmitter
             }
             _runFile = null;
             _runFileSeed = null;
+            var acts = new JsonObject();
+            foreach (var (act, entry) in RankedState.MapLog)
+            {
+                acts[act.ToString()] = new JsonObject { ["map"] = JsonNode.Parse(entry.Map), ["visited"] = JsonNode.Parse(entry.Visited) };
+            }
+            if (acts.Count > 0)
+            {
+                payload["map_log"] = new JsonObject { ["acts"] = acts };
+            }
             RankedState.EnqueueSubmission(active.RunId, payload.ToJsonString());
             Log.Info($"[RankedMode] Queued ranked result (victory={victory}, abandoned={abandoned}).");
         }
