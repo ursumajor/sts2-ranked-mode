@@ -102,7 +102,7 @@ def render_home(windows: list[dict], now: int) -> str:
     def section(title: str, items: list[dict], empty: str) -> str:
         body = "".join(row(w) for w in items) or f"<tr><td colspan=6 class=empty>{empty}</td></tr>"
         return (
-            f"<h2>{title}</h2><table><thead><tr><th>Status</th><th>Run</th><th>Character</th><th>When</th>"
+            f"<h2>{title}</h2><table class=runs><thead><tr><th>Status</th><th>Run</th><th>Character</th><th>When</th>"
             f"<th class=n>Players</th><th>Leader</th></tr></thead><tbody>{body}</tbody></table>"
         )
 
@@ -163,16 +163,31 @@ def _page(title: str, body: str) -> str:
 
 
 CSS = """
-:root{color-scheme:light dark;--fg:#1d1b18;--bg:#f7f4ee;--muted:#6b645a;--line:#ddd5c8;--accent:#9c3d1f;--ok:#2f6b3a}
-@media(prefers-color-scheme:dark){:root{--fg:#ece6dc;--bg:#191714;--muted:#a39a8c;--line:#3a342c;--accent:#e0875e;--ok:#7fc28c}}
-body{font:15px/1.5 system-ui,sans-serif;color:var(--fg);background:var(--bg);max-width:960px;margin:2rem auto;padding:0 1rem}
-h1{margin:.2rem 0;font-size:1.6rem} h2{font-size:1.1rem;margin:2rem 0 .3rem}
-table{width:100%;border-collapse:collapse;margin:.5rem 0} th,td{padding:.45rem .5rem;border-bottom:1px solid var(--line);text-align:left}
-th{font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)} .n{text-align:right;font-variant-numeric:tabular-nums}
-.empty{text-align:center;color:var(--muted)} .muted{color:var(--muted)} a{color:var(--accent)} code{font-size:.9em}
-.tag{font-size:.75rem;border:1px solid var(--line);border-radius:999px;padding:0 .5rem;white-space:nowrap;vertical-align:middle;font-weight:normal}
-.tag.open{color:var(--ok);border-color:var(--ok)} .tag.upcoming{color:var(--accent);border-color:var(--accent)} .tag.completed{color:var(--muted)}
-.tag.grace{color:var(--ok);border-color:var(--ok);border-style:dashed}
+/* Same palette as the run viewer (static/viewer.html): navy panels, parchment text, gold accents. */
+:root{color-scheme:dark;--bg:#1a1a2e;--panel:#16213e;--fg:#e0d7c6;--muted:#888;--line:#c9a84c22;--row:#ffffff08;
+--gold:#c9a84c;--blue:#7ec8e3;--ok:#5cb85c;--bad:#e05c5c}
+*{box-sizing:border-box}
+body{font:15px/1.5 'Segoe UI',system-ui,sans-serif;color:var(--fg);background:var(--bg);max-width:960px;margin:2rem auto;padding:0 1rem}
+header{border-bottom:1px solid #c9a84c44;padding-bottom:.6rem;margin-bottom:.5rem}
+h1{margin:.2rem 0;font-size:1.6rem;color:var(--gold);font-weight:normal;text-shadow:0 0 20px #c9a84c55}
+h2{font-size:.85rem;margin:2rem 0 .5rem;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+table{width:100%;border-collapse:separate;border-spacing:0;margin:.5rem 0;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{padding:.5rem .7rem;border-bottom:1px solid var(--row);text-align:left}
+tbody tr:last-child td{border-bottom:none} tbody tr:hover td{background:#c9a84c0d}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--gold);font-weight:600;border-bottom:1px solid var(--line)}
+.n{text-align:right;font-variant-numeric:tabular-nums}
+.empty{text-align:center;color:#555} .muted{color:var(--muted)}
+a{color:var(--gold);text-decoration:none} a:hover{text-decoration:underline} code{font-size:.9em;color:var(--blue)}
+.tag{font-size:.75rem;padding:2px 8px;border-radius:10px;white-space:nowrap;vertical-align:middle;font-weight:normal;
+background:#88888822;color:var(--muted);border:1px solid #88888844}
+.tag.open{background:#5cb85c22;color:var(--ok);border-color:#5cb85c55}
+.tag.upcoming{background:#c9a84c22;color:var(--gold);border-color:#c9a84c44}
+.tag.completed{background:#88888822;color:var(--muted);border-color:#88888844}
+.tag.grace{background:#5cb85c11;color:var(--ok);border-color:#5cb85c55;border-style:dashed}
+/* Home page: identical column widths in every section so they line up. */
+table.runs{table-layout:fixed} table.runs td{overflow:hidden;text-overflow:ellipsis}
+table.runs th:nth-child(1){width:110px} table.runs th:nth-child(2){width:20%} table.runs th:nth-child(3){width:13%}
+table.runs th:nth-child(5){width:130px} table.runs th:nth-child(6){width:19%}
 """
 
 JS = """
