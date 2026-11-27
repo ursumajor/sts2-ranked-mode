@@ -17,7 +17,8 @@ namespace RankedMode.Patches;
 /// <see cref="RankedSession.ScreenActive" /> is set, so normal Dread is untouched.
 ///
 /// In ranked:
-/// - the character-choice UI (character row, rotation option, streak chain, Dread records) is hidden and
+/// - the character-choice UI (character row, rotation option, streak chain, Dread records) and the base
+///   game's "under construction" note are hidden, and
 ///   selection is locked to the window's character;
 /// - while no window is open, the screen shows a large countdown to the next one (Embark hidden, Back works)
 ///   and switches to the open state by itself when it opens;
@@ -49,12 +50,12 @@ internal static class DreadScreenPatches
     // Nodes hidden for ranked, with their visibility before we touched them, so normal Dread gets them back.
     private static readonly Dictionary<Control, bool> _hidden = new();
 
-    // Character-choice UI that ranked doesn't use: the character row, the rotating-character option, the
-    // Dread win-streak chain and the per-character Dread records.
+    // UI that ranked doesn't use: the character row, the rotating-character option, the Dread win-streak
+    // chain, the per-character Dread records, and the base game's "under construction" note.
     private static readonly string[] CharacterUiFields =
     {
         "_charButtonContainer", "_startRotationTickbox", "_startRotationLabel", "_rotatingImage",
-        "_chainVisualization", "_scoreLabels", "_scoreValues",
+        "_chainVisualization", "_scoreLabels", "_scoreValues", "_underConstruction",
     };
 
     [HarmonyPostfix]
@@ -64,8 +65,9 @@ internal static class DreadScreenPatches
     /// <summary>Sets up the screen for the current state: normal Dread, ranked open, or ranked closed.</summary>
     public static void ApplyRankedUi(NDreadScreen screen)
     {
-        var countdown = Label(screen, CountdownName, 20, Control.LayoutPreset.CenterTop, 18);
-        var closedPanel = Label(screen, ClosedPanelName, 40, Control.LayoutPreset.Center, 0);
+        var countdown = Label(screen, CountdownName, 20);
+        var closedPanel = Label(screen, ClosedPanelName, 40);
+        Layout(screen);
         _lastShownSecond = -1;
         if (!RankedSession.ScreenActive)
         {
@@ -115,7 +117,7 @@ internal static class DreadScreenPatches
         UpdateLabels(screen);
     }
 
-    private static Label Label(NDreadScreen screen, string name, int size, Control.LayoutPreset preset, int offsetTop)
+    private static Label Label(NDreadScreen screen, string name, int size)
     {
         if (screen.GetNodeOrNull<Label>(name) is { } existing)
         {
@@ -128,13 +130,32 @@ internal static class DreadScreenPatches
         label.AddThemeConstantOverride("outline_size", size / 4);
         label.AddThemeConstantOverride("line_spacing", size / 5);
         label.MouseFilter = Control.MouseFilterEnum.Ignore;
-        screen.AddChild(label);
-        label.SetAnchorsPreset(preset);
-        label.GrowHorizontal = Control.GrowDirection.Both;
-        label.GrowVertical = preset == Control.LayoutPreset.Center ? Control.GrowDirection.Both : Control.GrowDirection.End;
-        label.OffsetTop += offsetTop;
         label.Visible = false;
+        screen.AddChild(label);
         return label;
+    }
+
+    /// <summary>
+    /// Position the labels from the screen's current size (anchor presets on code-created labels left them in
+    /// the top-left corner). Called on every update, so window resizes are followed too.
+    /// </summary>
+    private static void Layout(NDreadScreen screen)
+    {
+        var area = screen.Size;
+        if (area.X <= 0 || area.Y <= 0)
+        {
+            area = screen.GetViewportRect().Size;
+        }
+        if (screen.GetNodeOrNull<Label>(CountdownName) is { } countdown)
+        {
+            countdown.Position = new Vector2(0, 18);
+            countdown.Size = new Vector2(area.X, 40);
+        }
+        if (screen.GetNodeOrNull<Label>(ClosedPanelName) is { } panel)
+        {
+            panel.Position = Vector2.Zero;
+            panel.Size = area;
+        }
     }
 
     private static void Hide(Control? node)
@@ -179,6 +200,7 @@ internal static class DreadScreenPatches
 
     private static void UpdateLabels(NDreadScreen screen)
     {
+        Layout(screen);
         long now = RankedSession.ServerNow;
         if (RankedSession.Closed)
         {
