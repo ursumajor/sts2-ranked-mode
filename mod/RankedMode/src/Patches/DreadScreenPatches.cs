@@ -17,16 +17,18 @@ namespace RankedMode.Patches;
 /// <see cref="RankedSession.ScreenActive" /> is set, so normal Dread is untouched.
 ///
 /// In ranked:
-/// - selection is locked to the window's character (all other buttons disabled, any select redirected);
-/// - the rotating-character option is hidden and never begins a rotation;
+/// - the character-choice UI (character row, rotation option, streak chain, Dread records) is hidden and
+///   selection is locked to the window's character;
+/// - while no window is open, the screen shows a large countdown to the next one (Embark hidden, Back works)
+///   and switches to the open state by itself when it opens;
+/// - while open, a small countdown shows when the window closes;
+/// - the rotating-character option never begins a rotation;
 /// - the player's Dread preferences and rotation progress aren't touched;
 /// - Embark first fetches the secret seed from the server;
-/// - a banner shows the window and its countdown.
 /// </summary>
 [HarmonyPatch(typeof(NDreadScreen))]
 internal static class DreadScreenPatches
 {
-    private const string BannerName = "RankedBanner";
     private static int _lastShownSecond = -1;
 
     private static T? F<T>(NDreadScreen screen, string field) where T : class =>
@@ -41,74 +43,165 @@ internal static class DreadScreenPatches
         return Buttons(screen).FirstOrDefault(b => b != rotating && b.Character?.Id.ToString() == RankedSession.Character);
     }
 
+    private const string CountdownName = "RankedCountdown";   // small, top centre, while open
+    private const string ClosedPanelName = "RankedClosedPanel"; // large, centred, while closed
+
+    // Nodes hidden for ranked, with their visibility before we touched them, so normal Dread gets them back.
+    private static readonly Dictionary<Control, bool> _hidden = new();
+
+    // Character-choice UI that ranked doesn't use: the character row, the rotating-character option, the
+    // Dread win-streak chain and the per-character Dread records.
+    private static readonly string[] CharacterUiFields =
+    {
+        "_charButtonContainer", "_startRotationTickbox", "_startRotationLabel", "_rotatingImage",
+        "_chainVisualization", "_scoreLabels", "_scoreValues",
+    };
+
     [HarmonyPostfix]
     [HarmonyPatch(nameof(NDreadScreen.OnSubmenuOpened))]
-    private static void AfterOpened(NDreadScreen __instance)
+    private static void AfterOpened(NDreadScreen __instance) => ApplyRankedUi(__instance);
+
+    /// <summary>Sets up the screen for the current state: normal Dread, ranked open, or ranked closed.</summary>
+    public static void ApplyRankedUi(NDreadScreen screen)
     {
-        var banner = __instance.GetNodeOrNull<Label>(BannerName);
+        var countdown = Label(screen, CountdownName, 20, Control.LayoutPreset.CenterTop, 18);
+        var closedPanel = Label(screen, ClosedPanelName, 40, Control.LayoutPreset.Center, 0);
+        _lastShownSecond = -1;
         if (!RankedSession.ScreenActive)
         {
-            if (banner != null)
-            {
-                banner.Visible = false;
-            }
+            countdown.Visible = closedPanel.Visible = false;
+            RestoreHidden();
             return;
         }
 
-        var assigned = AssignedButton(__instance);
+        HideCharacterUi(screen);
+        var embark = F<NButton>(screen, "_embarkButton");
+        if (RankedSession.Closed)
+        {
+            Hide(embark);
+            embark?.Disable();
+        }
+        else if (embark != null && _hidden.Remove(embark, out bool wasVisible))
+        {
+            embark.Visible = wasVisible;
+        }
+        countdown.Visible = !RankedSession.Closed;
+        closedPanel.Visible = RankedSession.Closed;
+
+        // Select the window's character (the background art and name show it, even while closed).
+        var assigned = AssignedButton(screen);
         if (assigned == null)
         {
             Log.Error($"[RankedMode] Ranked character {RankedSession.Character} not found on the Dread screen.");
             RankedUi.Popup("Ranked", $"This ranked window uses {RankedSession.Character}, which this game version doesn't have.");
-            F<NButton>(__instance, "_embarkButton")?.Disable();
+            embark?.Disable();
             return;
         }
-        foreach (var button in Buttons(__instance))
-        {
-            if (button != assigned)
-            {
-                button.Disable();
-            }
-        }
-        var rotating = F<NCharacterSelectButton>(__instance, "_rotatingCharacterButton");
-        if (rotating != null)
-        {
-            rotating.Visible = false;
-        }
-        Traverse.Create(__instance).Field("_overriddenFocusedControl").SetValue(assigned);
+        Traverse.Create(screen).Field("_overriddenFocusedControl").SetValue(assigned);
         Callable.From(() =>
         {
             if (GodotObject.IsInstanceValid(assigned) && RankedSession.ScreenActive)
             {
-                assigned.Select();
+                if (assigned.IsSelected)
+                {
+                    screen.SelectCharacter(assigned);   // re-run the selection logic (e.g. closed -> open)
+                }
+                else
+                {
+                    assigned.Select();
+                }
             }
         }).CallDeferred();
-
-        if (banner == null)
-        {
-            banner = new Label { Name = BannerName, HorizontalAlignment = HorizontalAlignment.Center };
-            banner.AddThemeFontSizeOverride("font_size", 30);
-            banner.AddThemeColorOverride("font_color", new Color(0.95f, 0.82f, 0.45f));
-            banner.AddThemeColorOverride("font_outline_color", Colors.Black);
-            banner.AddThemeConstantOverride("outline_size", 8);
-            banner.MouseFilter = Control.MouseFilterEnum.Ignore;
-            __instance.AddChild(banner);
-            banner.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
-            banner.GrowHorizontal = Control.GrowDirection.Both;
-            banner.OffsetTop = 24;
-        }
-        banner.Visible = true;
-        _lastShownSecond = -1;
-        UpdateBanner(banner);
+        UpdateLabels(screen);
     }
 
-    private static void UpdateBanner(Label banner)
+    private static Label Label(NDreadScreen screen, string name, int size, Control.LayoutPreset preset, int offsetTop)
     {
-        long left = RankedSession.WindowEndsAt - RankedSession.ServerNow;
-        string name = RankedSession.Character?.Split('.').Last() ?? "?";
-        banner.Text = left > 0
-            ? $"{RankedLoc.Title} · {RankedSession.WindowId} · {name} · closes in {TimeSpan.FromSeconds(left):hh\\:mm\\:ss}"
-            : $"{RankedLoc.Title} · {RankedSession.WindowId} · window closed";
+        if (screen.GetNodeOrNull<Label>(name) is { } existing)
+        {
+            return existing;
+        }
+        var label = new Label { Name = name, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        label.AddThemeFontSizeOverride("font_size", size);
+        label.AddThemeColorOverride("font_color", new Color(0.95f, 0.82f, 0.45f));
+        label.AddThemeColorOverride("font_outline_color", Colors.Black);
+        label.AddThemeConstantOverride("outline_size", size / 4);
+        label.AddThemeConstantOverride("line_spacing", size / 5);
+        label.MouseFilter = Control.MouseFilterEnum.Ignore;
+        screen.AddChild(label);
+        label.SetAnchorsPreset(preset);
+        label.GrowHorizontal = Control.GrowDirection.Both;
+        label.GrowVertical = preset == Control.LayoutPreset.Center ? Control.GrowDirection.Both : Control.GrowDirection.End;
+        label.OffsetTop += offsetTop;
+        label.Visible = false;
+        return label;
+    }
+
+    private static void Hide(Control? node)
+    {
+        if (node == null)
+        {
+            return;
+        }
+        _hidden.TryAdd(node, node.Visible);
+        node.Visible = false;
+    }
+
+    private static void HideCharacterUi(NDreadScreen screen)
+    {
+        foreach (string field in CharacterUiFields)
+        {
+            Hide(F<Control>(screen, field));
+        }
+    }
+
+    private static void RestoreHidden()
+    {
+        foreach (var (node, visible) in _hidden)
+        {
+            if (GodotObject.IsInstanceValid(node))
+            {
+                node.Visible = visible;
+            }
+        }
+        _hidden.Clear();
+    }
+
+    private static string Countdown(long seconds)
+    {
+        var t = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return t.TotalDays >= 1 ? $"{(int)t.TotalDays}d {t:hh\\:mm\\:ss}" : t.ToString("hh\\:mm\\:ss");
+    }
+
+    private static string CharacterName() =>
+        (RankedSession.Character?.Split('.').Last() ?? "?").Replace('_', ' ') is var n && n.Length > 0
+            ? char.ToUpperInvariant(n[0]) + n[1..].ToLowerInvariant() : "?";
+
+    private static void UpdateLabels(NDreadScreen screen)
+    {
+        long now = RankedSession.ServerNow;
+        if (RankedSession.Closed)
+        {
+            if (screen.GetNodeOrNull<Label>(ClosedPanelName) is not { } panel)
+            {
+                return;
+            }
+            if (RankedSession.Notice != null)
+            {
+                panel.Text = $"RANKED\n{RankedSession.Notice}";
+                return;
+            }
+            long left = RankedSession.OpensAt - now;
+            var local = DateTimeOffset.FromUnixTimeSeconds(RankedSession.OpensAt).ToLocalTime();
+            panel.Text = left > 0
+                ? $"RANKED\nopens in {Countdown(left)}\n\nNext run: {CharacterName()} · {local:ddd HH:mm}"
+                : "RANKED\nopening…";
+        }
+        else if (screen.GetNodeOrNull<Label>(CountdownName) is { } countdown)
+        {
+            long left = RankedSession.WindowEndsAt - now;
+            countdown.Text = left > 0 ? $"Ranked · {CharacterName()} · closes in {Countdown(left)}" : "Ranked · window closed";
+        }
     }
 
     [HarmonyPostfix]
@@ -119,26 +212,34 @@ internal static class DreadScreenPatches
         {
             return;
         }
-        int second = (int)(RankedSession.ServerNow % 60);
+        long now = RankedSession.ServerNow;
+        if (RankedSession.Closed && now >= RankedSession.OpensAt && RankedSession.Notice == null
+            && !RankedSession.Refreshing && now >= RankedSession.RetryAt)
+        {
+            RankedSession.Refreshing = true;
+            TaskHelper.RunSafely(RankedFlow.RefreshClosedScreenAsync(__instance));
+        }
+        int second = (int)(now % 60);
         if (second == _lastShownSecond)
         {
             return;
         }
         _lastShownSecond = second;
-        if (__instance.GetNodeOrNull<Label>(BannerName) is { } banner)
-        {
-            UpdateBanner(banner);
-        }
+        UpdateLabels(__instance);
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(NDreadScreen.OnSubmenuClosed))]
     private static void AfterClosed(NDreadScreen __instance)
     {
-        if (__instance.GetNodeOrNull<Label>(BannerName) is { } banner)
+        foreach (string name in new[] { CountdownName, ClosedPanelName })
         {
-            banner.Visible = false;
+            if (__instance.GetNodeOrNull<Label>(name) is { } label)
+            {
+                label.Visible = false;
+            }
         }
+        RestoreHidden();
         // Buttons we disabled are re-enabled by the base game's OnSubmenuOpened next time.
         RankedSession.EndScreen();
     }
@@ -178,9 +279,13 @@ internal static class DreadScreenPatches
         {
             return;
         }
-        HideRotationTickbox(__instance);
+        HideCharacterUi(__instance);
         bool animating = Traverse.Create(__instance).Field("_doingChainAnimation").GetValue<bool>();
-        if (!animating && !RankedSession.EmbarkInFlight)
+        if (RankedSession.Closed)
+        {
+            F<NButton>(__instance, "_embarkButton")?.Disable();
+        }
+        else if (!animating && !RankedSession.EmbarkInFlight)
         {
             F<NButton>(__instance, "_embarkButton")?.Enable();
         }
@@ -192,19 +297,14 @@ internal static class DreadScreenPatches
     {
         if (RankedSession.ScreenActive)
         {
-            HideRotationTickbox(__instance);
-        }
-    }
-
-    private static void HideRotationTickbox(NDreadScreen screen)
-    {
-        if (F<Control>(screen, "_startRotationTickbox") is { } tickbox)
-        {
-            tickbox.Visible = false;
-        }
-        if (F<Control>(screen, "_startRotationLabel") is { } label)
-        {
-            label.Visible = false;
+            // The base game re-shows the rotation tickbox, streak chain and rotating image on every selection.
+            foreach (string field in CharacterUiFields)
+            {
+                if (F<Control>(__instance, field) is { } node)
+                {
+                    Hide(node);
+                }
+            }
         }
     }
 
@@ -232,6 +332,10 @@ internal static class DreadScreenPatches
         if (!RankedSession.ScreenActive || RankedSession.BypassEmbarkPatch)
         {
             return true;
+        }
+        if (RankedSession.Closed)
+        {
+            return false;   // nothing to embark on yet (also blocks the Embark hotkey)
         }
         if (!RankedSession.EmbarkInFlight)
         {

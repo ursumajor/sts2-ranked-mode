@@ -45,26 +45,15 @@ internal static class RankedFlow
             long serverTime = status["server_time"]!.GetValue<long>();
             long offset = serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var window = status["current_window"];
-            if (window == null)
+            var next = status["next_window"];
+            if (window == null && next == null)
             {
-                var next = status["next_window"];
-                RankedUi.Popup("Ranked is closed",
-                    next == null
-                        ? "No ranked window is scheduled right now."
-                        : "The next ranked window opens " + RankedUi.FormatLocal(next["starts_at"]!.GetValue<long>(), serverTime) + ".");
+                RankedUi.Popup("Ranked is closed", "No ranked window is scheduled right now.");
                 return;
             }
-            if (window["your_run"] != null)
+            if (window != null && WhyCantPlay(window) is { } problem)
             {
-                RankedUi.Popup("Already played",
-                    $"You've used your ranked attempt for this window. Leaderboard: {RankedConfig.ServerUrl}/");
-                return;
-            }
-            string? requiredVersion = window["game_version"]?.GetValue<string>();
-            if (!string.IsNullOrEmpty(requiredVersion) && requiredVersion != RankedMod.GameVersion)
-            {
-                RankedUi.Popup("Wrong game version",
-                    $"This ranked window requires {requiredVersion}, but you're on {RankedMod.GameVersion}.");
+                RankedUi.Popup(problem.Title, problem.Body);
                 return;
             }
             if (!GodotObject.IsInstanceValid(fromSubmenu) || !fromSubmenu.IsInsideTree())
@@ -76,11 +65,19 @@ internal static class RankedFlow
             {
                 return;
             }
-            RankedSession.BeginScreen(
-                window["id"]!.GetValue<string>(),
-                window["character"]!.GetValue<string>(),
-                window["ends_at"]!.GetValue<long>(),
-                offset);
+            if (window != null)
+            {
+                RankedSession.BeginScreen(
+                    window["id"]!.GetValue<string>(),
+                    window["character"]!.GetValue<string>(),
+                    window["ends_at"]!.GetValue<long>(),
+                    offset);
+            }
+            else
+            {
+                // Closed: show the countdown to the next window on the same screen.
+                RankedSession.BeginClosedScreen(next!["character"]!.GetValue<string>(), next["starts_at"]!.GetValue<long>(), offset);
+            }
             var screen = stack.GetSubmenuType<NDreadScreen>();
             screen.InitializeSingleplayer();
             stack.Push(screen);
@@ -94,6 +91,74 @@ internal static class RankedFlow
         finally
         {
             _opening = false;
+        }
+    }
+
+    private static (string Title, string Body)? WhyCantPlay(System.Text.Json.Nodes.JsonNode window)
+    {
+        if (window["your_run"] != null)
+        {
+            return ("Already played", $"You've used your ranked attempt for this window. Leaderboard: {RankedConfig.ServerUrl}/");
+        }
+        string? requiredVersion = window["game_version"]?.GetValue<string>();
+        if (!string.IsNullOrEmpty(requiredVersion) && requiredVersion != RankedMod.GameVersion)
+        {
+            return ("Wrong game version", $"This ranked window requires {requiredVersion}, but you're on {RankedMod.GameVersion}.");
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The closed-state countdown reached zero: ask the server whether the window is open now, and if so switch
+    /// the screen to the open state in place.
+    /// </summary>
+    public static async Task RefreshClosedScreenAsync(NDreadScreen screen)
+    {
+        RankedSession.Refreshing = true;
+        try
+        {
+            var status = await RankedApi.Status();
+            if (!GodotObject.IsInstanceValid(screen) || !RankedSession.ScreenActive || !RankedSession.Closed)
+            {
+                return;
+            }
+            long serverTime = status["server_time"]!.GetValue<long>();
+            long offset = serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var window = status["current_window"];
+            if (window == null)
+            {
+                // Not open yet (clocks a few seconds apart, or the schedule changed): follow the next window.
+                var next = status["next_window"];
+                if (next == null)
+                {
+                    RankedSession.Notice = "No ranked window is scheduled right now.";
+                }
+                else
+                {
+                    RankedSession.BeginClosedScreen(next["character"]!.GetValue<string>(), next["starts_at"]!.GetValue<long>(), offset);
+                    Patches.DreadScreenPatches.ApplyRankedUi(screen);
+                }
+                RankedSession.RetryAt = RankedSession.ServerNow + 5;
+                return;
+            }
+            if (WhyCantPlay(window) is { } problem)
+            {
+                RankedSession.Notice = problem.Body;
+                RankedSession.RetryAt = long.MaxValue;
+                return;
+            }
+            RankedSession.BeginScreen(window["id"]!.GetValue<string>(), window["character"]!.GetValue<string>(),
+                window["ends_at"]!.GetValue<long>(), offset);
+            Patches.DreadScreenPatches.ApplyRankedUi(screen);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[RankedMode] Ranked status check failed, retrying: {RankedApi.Describe(e)}");
+            RankedSession.RetryAt = RankedSession.ServerNow + 10;
+        }
+        finally
+        {
+            RankedSession.Refreshing = false;
         }
     }
 
