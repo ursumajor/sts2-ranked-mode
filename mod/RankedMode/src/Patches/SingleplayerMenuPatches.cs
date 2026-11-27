@@ -14,10 +14,10 @@ internal static class SingleplayerMenuPatches
 {
     private const string ButtonName = "RankedButton";
 
-    // Golden yellow on the submenu panel texture (Daily uses h 0.48, Dread 0.75, Custom 0.93).
-    private const float GoldHue = 0.955f;
-    private const float GoldSaturation = 2.4f;
-    private const float GoldBrightness = 0.8f;
+    // Bright golden yellow on the submenu panel texture (Daily uses h 0.48, Dread 0.75, Custom 0.93).
+    private const float GoldHue = 0.94f;
+    private const float GoldSaturation = 2.8f;
+    private const float GoldBrightness = 0.95f;
 
     /// <summary>File name of the optional custom card picture, next to RankedMode.dll in the mods folder.</summary>
     public const string IconFile = "ranked_icon.png";
@@ -27,7 +27,7 @@ internal static class SingleplayerMenuPatches
     /// <summary>
     /// Loads mods/RankedMode/ranked_icon.png if present. The game's card pictures are 378x288 and sit inside a
     /// decorative frame, so an image of that size (or the same 21:16 shape) fits best. Returns null to keep the
-    /// built-in Dread icon.
+    /// game's trophy picture.
     /// </summary>
     private static Texture2D? LoadCustomIcon()
     {
@@ -56,6 +56,60 @@ internal static class SingleplayerMenuPatches
         catch (Exception e)
         {
             Log.Warn($"[RankedMode] Custom Ranked icon failed to load: {e.Message}");
+            return null;
+        }
+    }
+
+    private const string TrophyPath = "res://images/packed/main_menu/submenu_trophy_icon.png";
+    private static Texture2D? _trophyIcon;
+
+    /// <summary>
+    /// The game's gold trophy icon, made into a full card picture. The icon is small and transparent (280x151),
+    /// and the card portrait fills its box, which would crop it and put gold on gold. So build a 378x288 picture
+    /// (the game's card picture size): a navy backdrop with a soft warm glow and the whole trophy centred.
+    /// </summary>
+    private static Texture2D? BuildTrophyIcon()
+    {
+        if (_trophyIcon != null)
+        {
+            return _trophyIcon;
+        }
+        try
+        {
+            var source = ResourceLoader.Load<Texture2D>(TrophyPath)?.GetImage();
+            if (source == null)
+            {
+                return null;
+            }
+            if (source.IsCompressed())
+            {
+                source.Decompress();
+            }
+            source.Convert(Image.Format.Rgba8);
+
+            const int width = 378, height = 288;
+            var picture = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+            var navy = new Color(26 / 255f, 26 / 255f, 46 / 255f);
+            var glow = new Color(1f, 0.84f, 0.47f);
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float dx = (x - width / 2f) / (width * 0.55f), dy = (y - height / 2f) / (height * 0.55f);
+                    float g = Mathf.Clamp(1f - Mathf.Sqrt(dx * dx + dy * dy), 0f, 1f);
+                    picture.SetPixel(x, y, navy.Lerp(glow, g * g * 0.35f));
+                }
+            }
+            float scale = Mathf.Min(width * 0.86f / source.GetWidth(), height * 0.86f / source.GetHeight());
+            int tw = (int)(source.GetWidth() * scale), th = (int)(source.GetHeight() * scale);
+            source.Resize(tw, th, Image.Interpolation.Lanczos);
+            picture.BlendRect(source, new Rect2I(0, 0, tw, th), new Vector2I((width - tw) / 2, (height - th) / 2));
+            _trophyIcon = ImageTexture.CreateFromImage(picture);
+            return _trophyIcon;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[RankedMode] Could not build the trophy card picture: {e.Message}");
             return null;
         }
     }
@@ -110,7 +164,7 @@ internal static class SingleplayerMenuPatches
             RankedLoc.Inject();
             ranked.SetLocalization("RANKED");
             ranked.SetIcon("dread");
-            if (LoadCustomIcon() is { } icon)
+            if ((LoadCustomIcon() ?? BuildTrophyIcon()) is { } icon)
             {
                 ranked.GetNodeOrNull<TextureRect>("%SubmenuPortrait")?.SetTexture(icon);
             }

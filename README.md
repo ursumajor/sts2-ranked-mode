@@ -70,13 +70,13 @@ local one during development), create `~/.local/share/SlayTheSpire2/ranked_mode/
 { "server_url": "http://127.0.0.1:8000" }
 ```
 
-The Ranked button is in **Singleplayer** next to Daily (it uses the Dread icon). The base game hides Singleplayer while a run save
+The Ranked button is in **Singleplayer** next to Daily (a gold card with a trophy). The base game hides Singleplayer while a run save
 exists, so finish or abandon your current run first.
 
 **Custom card picture:** put a PNG named `ranked_icon.png` in `mod/RankedMode/` (it's copied by
 `-t:Install` and included by `package.sh`), or straight into `<game>/mods/RankedMode/`. The game's card pictures
 are **378 × 288** and sit inside a decorative frame, so use that size or the same 21:16 shape. Without the file,
-the card uses the Dread icon.
+the card shows the game's gold trophy icon on a navy backdrop.
 
 Local mod state is in `~/.local/share/SlayTheSpire2/ranked_mode/state.json`: your player token, the
 active ranked run, results waiting to upload, and the ranked seeds you've played.
