@@ -70,7 +70,7 @@ local one during development), create `~/.local/share/SlayTheSpire2/ranked_mode/
 { "server_url": "http://127.0.0.1:8000" }
 ```
 
-The Ranked button is in **Singleplayer** next to Daily (a gold card with a trophy). It opens the Dread screen
+The Ranked button is the last card in **Singleplayer** (a gold card with a trophy). It opens the Dread screen
 in ranked mode, with the character-choice UI (other characters, rotation, win streak, Dread records) hidden.
 While a window is open, a small countdown at the top shows when it closes. While none is open, the screen
 shows a large countdown to the next window and its character, and the Back button returns to the menu. When

@@ -8,7 +8,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 
 namespace RankedMode.Patches;
 
-/// <summary>Adds a "Ranked" button next to Daily in the singleplayer submenu. It opens the Dread screen in ranked mode.</summary>
+/// <summary>Adds a "Ranked" button at the end of the singleplayer submenu. It opens the Dread screen in ranked mode.</summary>
 [HarmonyPatch(typeof(NSingleplayerSubmenu))]
 internal static class SingleplayerMenuPatches
 {
@@ -159,7 +159,9 @@ internal static class SingleplayerMenuPatches
                 bg.Material = material;
             }
             parent.AddChild(ranked);
-            parent.MoveChild(ranked, daily.GetIndex() + 1);
+            // Last in the row: right after the last of the game's mode cards (Standard, Daily, Blitz, Dread, Custom).
+            int lastCard = parent.GetChildren().OfType<NSubmenuButton>().Where(b => b != ranked).Max(b => b.GetIndex());
+            parent.MoveChild(ranked, lastCard + 1);
             ranked.Connect(NClickableControl.SignalName.Released, Callable.From<NButton>(_ => RankedFlow.Open(__instance)));
             RankedLoc.Inject();
             ranked.SetLocalization("RANKED");
